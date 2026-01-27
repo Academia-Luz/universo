@@ -19,6 +19,12 @@ app.use('/api/*', cors())
 // Serve static files
 app.use('/static/*', serveStatic())
 
+// Serve favicon
+app.get('/favicon.svg', serveStatic({ path: './favicon.svg' }))
+app.get('/favicon.ico', (c) => {
+  return c.redirect('/favicon.svg')
+})
+
 // ============================================================
 // API ROUTES
 // ============================================================
@@ -411,6 +417,9 @@ const mainHTML = `<!DOCTYPE html>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Academia de Luz - Escuela Espiritual</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <meta name="description" content="Academia de Luz - Plataforma educativa espiritual para Registros Akáshicos, Tarot, Reiki, Numerología y más">
+    <meta name="theme-color" content="#9333ea">
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700&family=Quicksand:wght@300;400;500;600;700&display=swap" rel="stylesheet">
