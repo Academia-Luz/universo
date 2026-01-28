@@ -2,155 +2,146 @@
 
 ## Descripción del Proyecto
 
-**Academia de Luz** es una plataforma educativa espiritual inspirada en SaaS Factory, diseñada para conectar maestros y alumnos en el camino del despertar espiritual. Ofrece formación en diversas artes espirituales incluyendo Registros Akáshicos, Tarot, Reiki, Numerología, Radiónica, Radiestesia y más.
+**Academia de Luz** es una plataforma educativa espiritual completa, diseñada para conectar maestros y alumnos en el camino del despertar espiritual. Ofrece formación en diversas artes espirituales incluyendo Registros Akáshicos, Tarot, Reiki, Numerología, Radiónica, Radiestesia y más.
 
-## 🌟 URL de Acceso
+## 🌟 URLs de Acceso
 
-- **Desarrollo**: https://3000-il53pogmbnlllslncuifj-5185f4aa.sandbox.novita.ai
-- **Producción**: Pendiente de despliegue en Cloudflare Pages
+| Entorno | URL |
+|---------|-----|
+| **Producción** | https://academia-de-luz.pages.dev |
+| **Desarrollo** | http://localhost:3000 |
 
 ## ✅ Funcionalidades Implementadas
 
-### 1. Sistema de Onboarding
-- **Pantalla de bienvenida** con efecto "click para despertar tu luz"
-- **Registro de perfil** con nombre, apellido, bio y selección de rol (Maestro/Alumno)
-- **Tour de funcionalidades** mostrando todas las secciones disponibles
-- **Presentación de Guías Espirituales IA** con sistema de desbloqueo por niveles
+### 1. Sistema de Onboarding Completo
+- Pantalla de bienvenida mística con "click para despertar tu luz"
+- Registro de perfil (Nombre, Apellido, Bio, Avatar)
+- Selección de rol: Maestro o Alumno
+- Tour interactivo de todas las funcionalidades
+- Presentación de Guías Espirituales IA
 
 ### 2. Comunidad
-- **Feed de posts** con categorías (Todas, General, Logros, Tarot, Reiki, Registros)
-- **Sistema de likes y comentarios**
-- **Badges para maestros**
-- **Indicador de posts nuevos**
-- **Sidebar con estadísticas** de la academia
+- Feed de posts con categorías (Todas, General, Logros, Tarot, Reiki, Registros)
+- Sistema de likes y comentarios
+- Badges distintivos para maestros
+- Indicador de posts nuevos
+- Sidebar con estadísticas de la academia
 
-### 3. Cursos Espirituales
-- **Grid de cursos** con imágenes, descripciones y progreso
-- **Sistema de niveles** para cursos avanzados
-- **Cursos bloqueados** por tiempo (días para desbloqueo)
-- **Categorías**: Registros Akáshicos, Tarot, Reiki, Numerología, Radiestesia, Radiónica, Meditación, Canalización
+### 3. Cursos Espirituales (9 cursos)
+| Curso | Nivel | Estado |
+|-------|-------|--------|
+| Iniciación a los Registros Akáshicos | 1 | ✅ Disponible |
+| Tarot Espiritual Avanzado | 1 | ✅ Disponible |
+| Reiki Nivel I - Usui Shiki Ryoho | 1 | ✅ Disponible |
+| Numerología Sagrada | 1 | ✅ Disponible |
+| Meditación y Chakras | 1 | ✅ Disponible |
+| Radiestesia y Péndulo | 2 | 🔒 Bloqueado |
+| Reiki Nivel II - Símbolos Sagrados | 2 | 🔒 Bloqueado |
+| Radiónica Cuántica | 3 | 🔒 Bloqueado |
+| Canalización y Mediumnidad | 3 | 🔒 Bloqueado |
 
-### 4. Calendario
-- **Vista mensual** con navegación
-- **Eventos espirituales** (meditaciones, clases, ceremonias, talleres)
-- **Indicador del día actual**
-- **Lista de próximos eventos** con botón de unirse
+### 4. Calendario de Eventos
+- Vista mensual con navegación
+- Tipos de eventos: meditaciones, clases, ceremonias, talleres
+- Indicador del día actual
+- Lista de próximos eventos con botón de unirse
 
-### 5. Miembros
-- **Directorio de miembros** con avatares
-- **Filtros**: Todos, Maestros, Online
-- **Buscador de miembros**
-- **Indicador de estado online**
-- **Información de ubicación y nivel**
+### 5. Directorio de Miembros
+- Grid de miembros con avatares
+- Filtros: Todos, Maestros, Online
+- Buscador de miembros
+- Indicador de estado online
+- Información de ubicación y nivel
 
-### 6. Leaderboard
-- **Rankings**: 7 días, 30 días, Todo el tiempo
-- **Sistema de 9 niveles**: Iniciado → Ascendido
-- **Estadísticas del usuario actual**
-- **Guía de cómo ganar puntos de luz**
-- **Distribución de niveles en la comunidad**
+### 6. Leaderboard y Sistema de Niveles
+| Nivel | Nombre | % de Miembros |
+|-------|--------|---------------|
+| 1 | Iniciado | 35% |
+| 2 | Buscador | 25% |
+| 3 | Aprendiz | 18% |
+| 4 | Practicante | 10% |
+| 5 | Iluminado | 6% |
+| 6 | Sabio | 3% |
+| 7 | Guardián | 2% |
+| 8 | Maestro | 0.8% |
+| 9 | Ascendido | 0.2% |
 
 ### 7. Guías Espirituales IA
-- **4 guías disponibles**:
-  - 🔮 **Lumina** - Guardiana de la Sabiduría (Disponible)
-  - 📖 **Akasha** - Guardiana de los Registros (Disponible)
-  - 🃏 **Arcano** - Maestro del Tarot (Nivel 2)
-  - 🙌 **Sanador** - Maestro de Energía (Nivel 3)
-- **Chat interactivo** con respuestas contextuales
-- **Sistema de desbloqueo por niveles**
+| Guía | Especialidad | Estado |
+|------|--------------|--------|
+| ✨ Lumina | Sabiduría Universal | ✅ Disponible |
+| 📖 Akasha | Registros Akáshicos | ✅ Disponible |
+| 🃏 Arcano | Tarot y Arquetipos | 🔒 Nivel 2 |
+| 🙌 Sanador | Reiki y Sanación | 🔒 Nivel 3 |
 
-## 🎨 Diseño Visual
+## 🔌 API Endpoints
 
-- **Tema oscuro** con gradientes púrpura/magenta
-- **Estrellas animadas** en el fondo
-- **Tipografía Cinzel** para títulos (elegante/espiritual)
-- **Tipografía Quicksand** para contenido (moderna/legible)
-- **Bordes con gradiente** en tarjetas
-- **Efectos glow** en textos y tarjetas
-- **Animaciones suaves** (floating, pulse, fade)
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/` | Página principal SPA |
+| GET | `/favicon.svg` | Favicon de la aplicación |
+| GET | `/api/courses` | Lista de 9 cursos espirituales |
+| GET | `/api/posts` | Posts de la comunidad |
+| GET | `/api/guides` | 4 Guías espirituales IA |
+| GET | `/api/events` | Eventos del calendario |
+| GET | `/api/members` | Lista de miembros |
+| GET | `/api/leaderboard` | Rankings y niveles |
+| POST | `/api/chat` | Chat con guías IA |
 
 ## 📁 Estructura del Proyecto
 
 ```
 webapp/
 ├── src/
-│   └── index.tsx          # Aplicación Hono completa (backend + frontend)
+│   └── index.tsx          # App Hono (backend + frontend)
 ├── public/
+│   ├── favicon.svg        # Favicon con gradiente
 │   └── static/            # Archivos estáticos
 ├── dist/                  # Build de producción
 ├── ecosystem.config.cjs   # Configuración PM2
 ├── package.json           # Dependencias
-├── wrangler.jsonc         # Configuración Cloudflare
-├── vite.config.ts         # Configuración Vite
-└── tsconfig.json          # Configuración TypeScript
+├── wrangler.jsonc         # Config Cloudflare
+├── vite.config.ts         # Config Vite
+└── tsconfig.json          # Config TypeScript
 ```
 
-## 🔌 API Endpoints
-
-| Método | Ruta | Descripción |
-|--------|------|-------------|
-| GET | `/` | Página principal de la aplicación |
-| GET | `/api/courses` | Lista de cursos espirituales |
-| GET | `/api/posts` | Posts de la comunidad |
-| GET | `/api/guides` | Guías espirituales IA disponibles |
-| GET | `/api/events` | Eventos del calendario |
-| GET | `/api/members` | Lista de miembros |
-| GET | `/api/leaderboard` | Rankings y niveles |
-| POST | `/api/chat` | Chat con guías espirituales IA |
-
-## 🚀 Comandos de Desarrollo
+## 🚀 Comandos
 
 ```bash
-# Instalar dependencias
-npm install
-
 # Desarrollo local
 npm run dev
 
-# Compilar para producción
+# Compilar
 npm run build
 
-# Ejecutar en sandbox
+# Ejecutar en sandbox con PM2
 pm2 start ecosystem.config.cjs
-
-# Ver logs
-pm2 logs --nostream
 
 # Desplegar a Cloudflare Pages
 npm run deploy:prod
+
+# Ver logs
+pm2 logs --nostream
 ```
 
-## 🔮 Funcionalidades Pendientes
-
-1. **Persistencia de datos** con Cloudflare D1
-2. **Sistema de autenticación** real
-3. **Subida de avatares** personalizados
-4. **Creación de cursos** por maestros
-5. **Sistema de pagos/suscripciones**
-6. **Notificaciones push**
-7. **Chat grupal** en la comunidad
-8. **Integración con OpenAI** para guías IA más avanzados
-9. **Mapa interactivo** de miembros
-10. **Sistema de certificaciones** digitales
-
-## 📝 Próximos Pasos Recomendados
-
-1. Configurar **Cloudflare D1** para almacenar usuarios, posts, cursos
-2. Implementar **autenticación** con JWT o Cloudflare Access
-3. Conectar **OpenAI API** para respuestas más inteligentes de los guías
-4. Agregar **sistema de pagos** con Stripe para cursos premium
-5. Implementar **WebRTC** para videollamadas grupales
-6. Crear **panel de administración** para maestros
-
-## 🛠️ Stack Tecnológico
+## 🎨 Stack Tecnológico
 
 - **Framework**: Hono (Edge-first)
-- **Runtime**: Cloudflare Workers/Pages
+- **Runtime**: Cloudflare Pages/Workers
 - **Frontend**: Vanilla JS + TailwindCSS (CDN)
-- **Tipografías**: Google Fonts (Cinzel, Quicksand)
-- **Iconos**: Font Awesome
+- **Tipografías**: Cinzel (títulos), Quicksand (contenido)
+- **Iconos**: Font Awesome 6
 - **Build**: Vite
-- **Gestión de procesos**: PM2
+- **Deploy**: Cloudflare Pages
+
+## 🔮 Próximos Pasos Recomendados
+
+1. **Persistencia de datos** con Cloudflare D1
+2. **Autenticación real** con JWT
+3. **Integración OpenAI** para guías IA avanzados
+4. **Sistema de pagos** con Stripe
+5. **WebRTC** para videollamadas grupales
+6. **Panel de administración** para maestros
 
 ## 📄 Licencia
 
