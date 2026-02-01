@@ -15,19 +15,33 @@
 
 ### 1. Sistema de Onboarding Completo
 - Pantalla de bienvenida mística con "click para despertar tu luz"
-- Registro de perfil (Nombre, Apellido, Bio, Avatar)
-- Selección de rol: Maestro o Alumno
+- Registro de perfil (Nombre, Apellido, Email, Contraseña, Bio, Avatar)
+- Selección de rol: **Maestro** o **Alumno**
 - Tour interactivo de todas las funcionalidades
 - Presentación de Guías Espirituales IA
 
-### 2. Comunidad
+### 2. Comunidad (estilo SaaS Factory)
 - Feed de posts con categorías (Todas, General, Logros, Tarot, Reiki, Registros)
 - Sistema de likes y comentarios
 - Badges distintivos para maestros
 - Indicador de posts nuevos
 - Sidebar con estadísticas de la academia
 
-### 3. Cursos Espirituales (9 cursos)
+### 3. 🎓 Sistema de Cursos Avanzado
+
+#### Generación de Cursos con IA
+- **Generación automática**: Crea cursos completos a partir de un tema
+- **Subida de archivos**: Convierte Word, PDF, PowerPoint a lecciones estructuradas
+- **Creación manual**: Control total sobre el contenido
+
+#### Tipos de Lecciones
+| Tipo | Icono | Descripción |
+|------|-------|-------------|
+| Video | 🎬 | Lección con video embebido de YouTube |
+| Lesson | 📖 | Contenido teórico formateado |
+| Practice | 🎯 | Ejercicios prácticos |
+
+#### Catálogo de Cursos (9 cursos)
 | Curso | Nivel | Estado |
 |-------|-------|--------|
 | Iniciación a los Registros Akáshicos | 1 | ✅ Disponible |
@@ -40,53 +54,118 @@
 | Radiónica Cuántica | 3 | 🔒 Bloqueado |
 | Canalización y Mediumnidad | 3 | 🔒 Bloqueado |
 
-### 4. Calendario de Eventos
+### 4. 📊 Presentaciones y Slides
+- **Generación automática de presentaciones** a partir de contenido de lecciones
+- Slides con diseño espiritual (gradientes púrpura/rosa/dorado)
+- Tipos de slides: título, bullets, texto, cierre
+- Navegación entre slides con indicadores visuales
+
+### 5. 👨‍🏫 Panel de Maestros ("Mi Escuela")
+
+#### Gestión de Cursos
+- Ver todos mis cursos con estadísticas
+- **Agregar/editar lecciones** con editor HTML
+- **Agregar videos de YouTube** a cualquier lección
+- **Generar presentaciones** para cada lección
+- Eliminar lecciones
+
+#### Gestión de Alumnos
+- **Agregar nuevos alumnos** por email
+- Ver progreso de cada alumno por curso
+- **Inscribir alumnos en cursos** directamente
+- Remover alumnos de la escuela
+- Estadísticas de la escuela
+
+### 6. 📅 Calendario de Eventos
 - Vista mensual con navegación
 - Tipos de eventos: meditaciones, clases, ceremonias, talleres
 - Indicador del día actual
 - Lista de próximos eventos con botón de unirse
 
-### 5. Directorio de Miembros
+### 7. 👥 Directorio de Miembros
 - Grid de miembros con avatares
 - Filtros: Todos, Maestros, Online
-- Buscador de miembros
 - Indicador de estado online
 - Información de ubicación y nivel
 
-### 6. Leaderboard y Sistema de Niveles
-| Nivel | Nombre | % de Miembros |
-|-------|--------|---------------|
-| 1 | Iniciado | 35% |
-| 2 | Buscador | 25% |
-| 3 | Aprendiz | 18% |
-| 4 | Practicante | 10% |
-| 5 | Iluminado | 6% |
-| 6 | Sabio | 3% |
-| 7 | Guardián | 2% |
-| 8 | Maestro | 0.8% |
-| 9 | Ascendido | 0.2% |
+### 8. 🏆 Leaderboard y Sistema de Niveles
+| Nivel | Nombre | Puntos Mínimos |
+|-------|--------|----------------|
+| 1 | Iniciado | 0 |
+| 2 | Buscador | 100 |
+| 3 | Aprendiz | 300 |
+| 4 | Practicante | 600 |
+| 5 | Iluminado | 1000 |
+| 6 | Sabio | 1500 |
+| 7 | Guardián | 2200 |
+| 8 | Maestro | 3000 |
+| 9 | Ascendido | 4000 |
 
-### 7. Guías Espirituales IA
+### 9. 🤖 Guías Espirituales IA
 | Guía | Especialidad | Estado |
 |------|--------------|--------|
 | ✨ Lumina | Sabiduría Universal | ✅ Disponible |
 | 📖 Akasha | Registros Akáshicos | ✅ Disponible |
 | 🃏 Arcano | Tarot y Arquetipos | 🔒 Nivel 2 |
 | 🙌 Sanador | Reiki y Sanación | 🔒 Nivel 3 |
+| 🎓 Creador | Asistente IA para Maestros | ✅ Para Maestros |
 
 ## 🔌 API Endpoints
 
+### Autenticación
 | Método | Ruta | Descripción |
 |--------|------|-------------|
-| GET | `/` | Página principal SPA |
-| GET | `/favicon.svg` | Favicon de la aplicación |
-| GET | `/api/courses` | Lista de 9 cursos espirituales |
+| POST | `/api/auth/register` | Registro de usuario |
+| POST | `/api/auth/login` | Inicio de sesión |
+
+### Cursos y Lecciones
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/api/courses` | Lista de cursos |
+| GET | `/api/courses/:id` | Detalle de curso |
+| POST | `/api/courses` | Crear curso (maestro) |
+| PUT | `/api/courses/:id` | Actualizar curso |
+| POST | `/api/courses/:id/enroll` | Inscribirse en curso |
+| POST | `/api/courses/:id/lessons` | Agregar lección |
+| PUT | `/api/courses/:id/lessons/:lessonId` | Editar lección |
+| DELETE | `/api/courses/:id/lessons/:lessonId` | Eliminar lección |
+| POST | `/api/courses/:id/lessons/:lessonId/video` | Agregar video |
+| POST | `/api/courses/:id/lessons/:lessonId/complete` | Completar lección |
+
+### IA y Generación de Contenido
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| POST | `/api/ai/create-course` | Generar curso con IA |
+| POST | `/api/ai/publish-course/:pendingId` | Publicar curso generado |
+| POST | `/api/ai/process-file` | Procesar archivo (Word/PDF/PPT) |
+| POST | `/api/ai/generate-presentation` | Generar presentación |
+| POST | `/api/ai/chat` | Chat con asistente IA |
+
+### Maestros y Alumnos
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/api/teacher/:id/students` | Lista de alumnos |
+| POST | `/api/teacher/:id/students` | Agregar alumno |
+| DELETE | `/api/teacher/:id/students/:studentId` | Remover alumno |
+
+### Comunidad
+| Método | Ruta | Descripción |
+|--------|------|-------------|
 | GET | `/api/posts` | Posts de la comunidad |
-| GET | `/api/guides` | 4 Guías espirituales IA |
+| POST | `/api/posts` | Crear post |
+| POST | `/api/posts/:id/like` | Dar like |
+| POST | `/api/posts/:id/comment` | Comentar |
+
+### Otros
+| Método | Ruta | Descripción |
+|--------|------|-------------|
 | GET | `/api/events` | Eventos del calendario |
 | GET | `/api/members` | Lista de miembros |
 | GET | `/api/leaderboard` | Rankings y niveles |
-| POST | `/api/chat` | Chat con guías IA |
+| GET | `/api/guides` | Guías espirituales IA |
+| POST | `/api/chat` | Chat con guías |
+| GET | `/api/notifications/:userId` | Notificaciones |
+| GET | `/api/stats` | Estadísticas generales |
 
 ## 📁 Estructura del Proyecto
 
@@ -96,8 +175,10 @@ webapp/
 │   └── index.tsx          # App Hono (backend + frontend)
 ├── public/
 │   ├── favicon.svg        # Favicon con gradiente
-│   └── static/            # Archivos estáticos
+│   └── static/
+│       └── app.js         # Frontend SPA completo
 ├── dist/                  # Build de producción
+├── reference/             # Imágenes de referencia
 ├── ecosystem.config.cjs   # Configuración PM2
 ├── package.json           # Dependencias
 ├── wrangler.jsonc         # Config Cloudflare
@@ -134,14 +215,42 @@ pm2 logs --nostream
 - **Build**: Vite
 - **Deploy**: Cloudflare Pages
 
+## 🎯 Guía de Uso
+
+### Para Alumnos
+1. **Registrarse** seleccionando el rol "Alumno"
+2. **Explorar cursos** disponibles en la sección "Cursos"
+3. **Inscribirse** en un curso (botón "Inscribirme")
+4. **Ver lecciones** con videos y contenido formateado
+5. **Marcar lecciones** como completadas (+5 puntos)
+6. **Chatear** con guías espirituales IA
+7. **Participar** en la comunidad con posts
+
+### Para Maestros
+1. **Registrarse** seleccionando el rol "Maestro"
+2. **Ir a "Mi Escuela"** en el menú principal
+3. **Crear cursos** usando:
+   - 🪄 **IA**: Ingresa un tema y genera automáticamente
+   - 📄 **Archivo**: Sube Word/PDF/PowerPoint
+   - ✏️ **Manual**: Crea desde cero
+4. **Gestionar lecciones**:
+   - Agregar nuevas lecciones
+   - Editar contenido con HTML
+   - Agregar videos de YouTube
+   - Generar presentaciones/slides
+5. **Gestionar alumnos**:
+   - Agregar alumnos por email
+   - Inscribirlos en cursos
+   - Ver su progreso
+
 ## 🔮 Próximos Pasos Recomendados
 
-1. **Persistencia de datos** con Cloudflare D1
+1. **Persistencia de datos** con Cloudflare D1 (ya configurado)
 2. **Autenticación real** con JWT
 3. **Integración OpenAI** para guías IA avanzados
 4. **Sistema de pagos** con Stripe
 5. **WebRTC** para videollamadas grupales
-6. **Panel de administración** para maestros
+6. **Notificaciones push** para eventos y actualizaciones
 
 ## 📄 Licencia
 
