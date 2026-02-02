@@ -217,8 +217,17 @@ pm2 logs --nostream
 
 ## 🎯 Guía de Uso
 
+### Login Rápido (Cuentas Demo)
+En la pantalla de bienvenida puedes ingresar con cuentas demo para probar:
+
+| Cuenta | Rol | Especialidad |
+|--------|-----|--------------|
+| 🌟 Maestra Aurora | Maestro | Registros Akáshicos |
+| ⭐ Maestro Orión | Maestro | Tarot Espiritual |
+| 🔮 Carlos Mendoza | Alumno | Nivel 3 |
+
 ### Para Alumnos
-1. **Registrarse** seleccionando el rol "Alumno"
+1. **Registrarse** o usar **login rápido** seleccionando un alumno
 2. **Explorar cursos** disponibles en la sección "Cursos"
 3. **Inscribirse** en un curso (botón "Inscribirme")
 4. **Ver lecciones** con videos y contenido formateado

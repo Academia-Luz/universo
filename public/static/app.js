@@ -361,6 +361,9 @@ async function sendChatMessage() {
     input.value = '';
     render();
     
+    // Scroll immediately after user message
+    scrollChat();
+    
     const result = await api('/chat', {
         method: 'POST',
         body: { message, guideId: state.selectedGuide, userId: state.user?.id, history: state.chatMessages }
@@ -369,11 +372,13 @@ async function sendChatMessage() {
     if (result?.response) {
         state.chatMessages.push({ text: result.response, isUser: false });
         render();
-        setTimeout(() => {
-            const el = $('chatMessages');
-            if (el) el.scrollTop = el.scrollHeight;
-        }, 100);
+        setTimeout(scrollChat, 100);
     }
+}
+
+function scrollChat() {
+    const el = $('chatMessages');
+    if (el) el.scrollTop = el.scrollHeight;
 }
 
 // Search
@@ -471,6 +476,9 @@ async function sendAIMessage() {
     input.value = '';
     render();
     
+    // Scroll immediately after user message
+    scrollAIChat();
+    
     const result = await api('/ai/chat', {
         method: 'POST',
         body: { message, context: state.pendingCourse, teacherId: state.user.id }
@@ -479,11 +487,13 @@ async function sendAIMessage() {
     if (result?.response) {
         state.aiChatMessages.push({ text: result.response, isUser: false });
         render();
-        setTimeout(() => {
-            const el = $('aiChatMessages');
-            if (el) el.scrollTop = el.scrollHeight;
-        }, 100);
+        setTimeout(scrollAIChat, 100);
     }
+}
+
+function scrollAIChat() {
+    const el = $('aiChatMessages');
+    if (el) el.scrollTop = el.scrollHeight;
 }
 
 async function generateCourse() {
@@ -780,15 +790,64 @@ async function enrollStudentInCourse(studentId, courseId) {
 // RENDER FUNCTIONS
 // ============================================================
 
+// Quick Login with demo accounts
+async function quickLogin(userId) {
+    const result = await api('/auth/login', {
+        method: 'POST',
+        body: { userId }
+    });
+    
+    if (result?.success) {
+        state.user = result.user;
+        saveUser();
+        showToast('¡Bienvenido ' + result.user.name + '! ✨');
+        await fetchData();
+        state.screen = 'main';
+        render();
+    } else {
+        showToast('Error al iniciar sesión', 'error');
+    }
+}
+
 function renderWelcome() {
-    return `<div class="min-h-screen flex items-center justify-center cursor-pointer" onclick="goTo('onboarding-1')">
-        <div class="text-center">
+    return `<div class="min-h-screen flex items-center justify-center p-4">
+        <div class="text-center max-w-lg w-full">
             <div class="text-8xl mb-8 floating">🌟</div>
             <h1 class="font-cinzel text-4xl md:text-5xl text-white mb-4 glow-text">Academia de Luz</h1>
             <p class="text-purple-300 text-xl font-light tracking-widest mb-8">Escuela Espiritual Online</p>
-            <p class="text-purple-400">
-                > click para despertar tu luz<span class="typing-cursor">...</span>
-            </p>
+            
+            <button onclick="goTo('onboarding-1')" class="btn-spiritual px-8 py-4 rounded-xl font-semibold text-lg mb-8 w-full">
+                ✨ Crear Nueva Cuenta
+            </button>
+            
+            <div class="gradient-border">
+                <div class="gradient-border-inner p-4">
+                    <p class="text-purple-300 text-sm mb-4">O ingresa con una cuenta demo:</p>
+                    <div class="space-y-2">
+                        <button onclick="quickLogin('teacher-1')" class="w-full bg-purple-900/50 hover:bg-purple-800/50 text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3">
+                            <span class="text-2xl">🌟</span>
+                            <div>
+                                <p class="text-white font-medium">Maestra Aurora</p>
+                                <p class="text-purple-400 text-xs">Maestro • Registros Akáshicos</p>
+                            </div>
+                        </button>
+                        <button onclick="quickLogin('teacher-2')" class="w-full bg-purple-900/50 hover:bg-purple-800/50 text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3">
+                            <span class="text-2xl">⭐</span>
+                            <div>
+                                <p class="text-white font-medium">Maestro Orión</p>
+                                <p class="text-purple-400 text-xs">Maestro • Tarot Espiritual</p>
+                            </div>
+                        </button>
+                        <button onclick="quickLogin('user-1')" class="w-full bg-purple-900/50 hover:bg-purple-800/50 text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3">
+                            <span class="text-2xl">🔮</span>
+                            <div>
+                                <p class="text-white font-medium">Carlos Mendoza</p>
+                                <p class="text-purple-400 text-xs">Alumno • Nivel 3</p>
+                            </div>
+                        </button>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>`;
 }
