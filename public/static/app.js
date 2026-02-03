@@ -1681,9 +1681,14 @@ function renderMySchool() {
     return `<div>
         <div class="flex items-center justify-between mb-6 flex-wrap gap-4">
             <h1 class="font-cinzel text-2xl text-white">🎓 Mi Escuela</h1>
-            <button onclick="toggleAICourseCreator()" class="btn-spiritual px-4 py-2 rounded-lg">
-                <i class="fas fa-magic mr-2"></i> Crear Curso con IA
-            </button>
+            <div class="flex gap-2">
+                <button onclick="toggleSuperAgent()" class="btn-spiritual px-4 py-2 rounded-lg">
+                    <i class="fas fa-robot mr-2"></i> Super Agente IA
+                </button>
+                <button onclick="toggleAICourseCreator()" class="btn-secondary px-4 py-2 rounded-lg text-purple-300">
+                    <i class="fas fa-plus mr-2"></i> Nuevo Curso
+                </button>
+            </div>
         </div>
         
         <!-- Tabs -->
@@ -1705,6 +1710,8 @@ function renderMySchool() {
         
         ${state.showCreateCourse ? renderAICourseCreatorModal() : ''}
         ${state.showAddStudent ? renderAddStudentModal() : ''}
+        ${state.showSuperAgent ? renderSuperAgentModal() : ''}
+        ${state.showExamPreview ? renderExamPreviewModal() : ''}
     </div>`;
 }
 
@@ -2487,6 +2494,712 @@ function insertPracticeBox() {
     const pos = textarea.selectionStart;
     textarea.value = textarea.value.substring(0, pos) + template + textarea.value.substring(pos);
     textarea.focus();
+}
+
+// ============================================================
+// SUPER AGENTE - FUNCIONES DE UI
+// ============================================================
+
+// State for Super Agent
+state.superAgentTab = 'lessons';
+state.generatedExam = null;
+state.generatedPresentation = null;
+state.showSuperAgent = false;
+state.showExamPreview = false;
+state.showPresentationPreview = false;
+state.examAnswers = {};
+
+// Toggle Super Agent modal
+function toggleSuperAgent() {
+    state.showSuperAgent = !state.showSuperAgent;
+    if (state.showSuperAgent) {
+        state.superAgentTab = 'lessons';
+    }
+    render();
+}
+
+// Set Super Agent tab
+function setSuperAgentTab(tab) {
+    state.superAgentTab = tab;
+    render();
+}
+
+// Generate Professional Lesson
+async function generateProfessionalLesson() {
+    const topic = $('lessonTopic')?.value?.trim();
+    const lessonType = $('lessonType')?.value || 'lesson';
+    const duration = $('lessonDuration')?.value || '45min';
+    const objectives = $('lessonObjectives')?.value?.split('\n').filter(o => o.trim()) || [];
+    const targetAudience = $('lessonAudience')?.value || 'Todos los niveles';
+    const includeExercises = $('includeExercises')?.checked !== false;
+    const includeQuiz = $('includeQuiz')?.checked !== false;
+    
+    if (!topic) {
+        showToast('Ingresa un tema para la lección', 'error');
+        return;
+    }
+    
+    showToast('Generando lección profesional...', 'info');
+    
+    const result = await api('/super-agent/generate-lesson', {
+        method: 'POST',
+        body: { 
+            teacherId: state.user.id, 
+            topic, 
+            lessonType, 
+            duration, 
+            objectives,
+            targetAudience,
+            includeExercises,
+            includeQuiz
+        }
+    });
+    
+    if (result?.success) {
+        state.generatedLesson = result.lesson;
+        showToast('¡Lección profesional generada! ✨', 'success');
+        render();
+    } else {
+        showToast('Error al generar la lección', 'error');
+    }
+}
+
+// Generate Professional Exam
+async function generateProfessionalExam() {
+    const title = $('examTitle')?.value?.trim() || '';
+    const topic = $('examTopic')?.value?.trim();
+    const numQuestions = parseInt($('examNumQuestions')?.value) || 10;
+    const difficulty = $('examDifficulty')?.value || 'medium';
+    const timeLimit = parseInt($('examTimeLimit')?.value) || 30;
+    const passingScore = parseInt($('examPassingScore')?.value) || 70;
+    
+    const questionTypes = [];
+    if ($('qtMultipleChoice')?.checked) questionTypes.push('multiple_choice');
+    if ($('qtTrueFalse')?.checked) questionTypes.push('true_false');
+    if ($('qtFillBlank')?.checked) questionTypes.push('fill_blank');
+    if ($('qtShortAnswer')?.checked) questionTypes.push('short_answer');
+    
+    if (!topic) {
+        showToast('Ingresa un tema para el examen', 'error');
+        return;
+    }
+    
+    if (questionTypes.length === 0) {
+        showToast('Selecciona al menos un tipo de pregunta', 'error');
+        return;
+    }
+    
+    showToast('Generando examen profesional...', 'info');
+    
+    const result = await api('/super-agent/generate-exam', {
+        method: 'POST',
+        body: {
+            teacherId: state.user.id,
+            title,
+            topic,
+            numQuestions,
+            questionTypes,
+            difficulty,
+            timeLimit,
+            passingScore,
+            includeExplanations: true
+        }
+    });
+    
+    if (result?.success) {
+        state.generatedExam = result.exam;
+        showToast(`¡Examen generado con ${result.exam.questions.length} preguntas! 📝`, 'success');
+        render();
+    } else {
+        showToast('Error al generar el examen', 'error');
+    }
+}
+
+// Generate Professional Presentation
+async function generateProfessionalPresentation() {
+    const topic = $('presTopic')?.value?.trim();
+    const content = $('presContent')?.value?.trim() || '';
+    const style = $('presStyle')?.value || 'spiritual';
+    const numSlides = parseInt($('presNumSlides')?.value) || 10;
+    const includeAnimations = $('presAnimations')?.checked !== false;
+    const includeDiagrams = $('presDiagrams')?.checked !== false;
+    const includeQuizSlides = $('presQuiz')?.checked !== false;
+    
+    if (!topic) {
+        showToast('Ingresa un tema para la presentación', 'error');
+        return;
+    }
+    
+    showToast('Generando presentación profesional...', 'info');
+    
+    const result = await api('/super-agent/generate-presentation', {
+        method: 'POST',
+        body: {
+            teacherId: state.user.id,
+            topic,
+            content,
+            style,
+            numSlides,
+            includeAnimations,
+            includeDiagrams,
+            includeQuizSlides
+        }
+    });
+    
+    if (result?.success) {
+        state.generatedPresentation = result.presentation;
+        showToast(`¡Presentación generada con ${result.presentation.slides.length} slides! 🎬`, 'success');
+        render();
+    } else {
+        showToast('Error al generar la presentación', 'error');
+    }
+}
+
+// Preview Exam
+function previewExam() {
+    if (!state.generatedExam) return;
+    state.showExamPreview = true;
+    state.examAnswers = {};
+    render();
+}
+
+// Submit Exam (for preview/test)
+async function submitExamPreview() {
+    if (!state.generatedExam) return;
+    
+    const answers = state.generatedExam.questions.map((q, i) => state.examAnswers[i] || '');
+    
+    const result = await api(`/super-agent/exams/${state.generatedExam.id}/submit`, {
+        method: 'POST',
+        body: {
+            userId: state.user.id,
+            answers
+        }
+    });
+    
+    if (result?.success) {
+        state.examResults = result;
+        showToast(result.score.passed ? '¡Aprobaste! ✨' : 'Sigue practicando 🙏', result.score.passed ? 'success' : 'info');
+        render();
+    }
+}
+
+// Preview Presentation
+function previewPresentation() {
+    if (!state.generatedPresentation) return;
+    state.showPresentationPreview = true;
+    state.currentSlide = 0;
+    render();
+}
+
+// Open presentation in new window (full Reveal.js)
+function openFullPresentation() {
+    if (!state.generatedPresentation?.revealHtml) return;
+    const newWindow = window.open('', '_blank');
+    newWindow.document.write(state.generatedPresentation.revealHtml);
+    newWindow.document.close();
+}
+
+// Render Super Agent Modal
+function renderSuperAgentModal() {
+    return `<div class="fixed inset-0 modal-overlay z-50 flex items-center justify-center p-4" onclick="if(event.target===this){state.showSuperAgent=false;render()}">
+        <div class="gradient-border w-full max-w-6xl max-h-[90vh] overflow-y-auto slide-up">
+            <div class="gradient-border-inner">
+                <div class="flex justify-between items-center p-6 border-b border-purple-800/30">
+                    <div class="flex items-center gap-3">
+                        <div class="text-3xl">🤖</div>
+                        <div>
+                            <h3 class="font-cinzel text-xl text-white">Super Agente Creador</h3>
+                            <p class="text-purple-400 text-sm">Crea clases, exámenes y presentaciones profesionales</p>
+                        </div>
+                    </div>
+                    <button onclick="state.showSuperAgent=false;render()" class="text-purple-400 hover:text-white"><i class="fas fa-times text-xl"></i></button>
+                </div>
+                
+                <!-- Tabs -->
+                <div class="flex gap-2 p-4 border-b border-purple-800/30 overflow-x-auto">
+                    <button onclick="setSuperAgentTab('lessons')" class="tab-btn px-4 py-2 rounded-lg text-sm whitespace-nowrap ${state.superAgentTab === 'lessons' ? 'active' : 'bg-purple-900/50 text-purple-300'}">
+                        📚 Lecciones
+                    </button>
+                    <button onclick="setSuperAgentTab('exams')" class="tab-btn px-4 py-2 rounded-lg text-sm whitespace-nowrap ${state.superAgentTab === 'exams' ? 'active' : 'bg-purple-900/50 text-purple-300'}">
+                        📝 Exámenes
+                    </button>
+                    <button onclick="setSuperAgentTab('presentations')" class="tab-btn px-4 py-2 rounded-lg text-sm whitespace-nowrap ${state.superAgentTab === 'presentations' ? 'active' : 'bg-purple-900/50 text-purple-300'}">
+                        🎬 Presentaciones
+                    </button>
+                </div>
+                
+                <div class="p-6">
+                    ${state.superAgentTab === 'lessons' ? renderSuperAgentLessons() : ''}
+                    ${state.superAgentTab === 'exams' ? renderSuperAgentExams() : ''}
+                    ${state.superAgentTab === 'presentations' ? renderSuperAgentPresentations() : ''}
+                </div>
+            </div>
+        </div>
+    </div>`;
+}
+
+// Render Lessons Tab
+function renderSuperAgentLessons() {
+    return `<div class="grid lg:grid-cols-2 gap-6">
+        <div class="gradient-border">
+            <div class="gradient-border-inner p-4">
+                <h4 class="text-white font-semibold mb-4 flex items-center gap-2">
+                    <i class="fas fa-magic text-purple-400"></i>
+                    Generar Lección Profesional
+                </h4>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-purple-300 text-sm mb-2">Tema de la lección *</label>
+                        <input type="text" id="lessonTopic" placeholder="ej: Interpretación de los Arcanos Mayores" class="w-full bg-purple-900/30 border border-purple-700/50 rounded-lg px-4 py-3 text-white placeholder-purple-500 focus:outline-none">
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-purple-300 text-xs mb-1">Tipo</label>
+                            <select id="lessonType" class="w-full bg-purple-900/30 border border-purple-700/50 rounded-lg px-3 py-2 text-white text-sm focus:outline-none">
+                                <option value="video">🎬 Video</option>
+                                <option value="lesson" selected>📖 Lección</option>
+                                <option value="practice">🎯 Práctica</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-purple-300 text-xs mb-1">Duración</label>
+                            <select id="lessonDuration" class="w-full bg-purple-900/30 border border-purple-700/50 rounded-lg px-3 py-2 text-white text-sm focus:outline-none">
+                                <option value="30min">30 min</option>
+                                <option value="45min" selected>45 min</option>
+                                <option value="60min">60 min</option>
+                                <option value="90min">90 min</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-purple-300 text-sm mb-2">Objetivos de aprendizaje (uno por línea)</label>
+                        <textarea id="lessonObjectives" rows="3" placeholder="Comprender los fundamentos&#10;Aplicar técnicas básicas&#10;Desarrollar práctica personal" class="w-full bg-purple-900/30 border border-purple-700/50 rounded-lg px-4 py-3 text-white placeholder-purple-500 focus:outline-none resize-none text-sm"></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-purple-300 text-sm mb-2">Público objetivo</label>
+                        <input type="text" id="lessonAudience" value="Todos los niveles" class="w-full bg-purple-900/30 border border-purple-700/50 rounded-lg px-4 py-2 text-white focus:outline-none text-sm">
+                    </div>
+                    <div class="flex gap-4">
+                        <label class="flex items-center gap-2 text-purple-300 text-sm cursor-pointer">
+                            <input type="checkbox" id="includeExercises" checked class="rounded bg-purple-900/50 border-purple-700">
+                            Incluir ejercicios
+                        </label>
+                        <label class="flex items-center gap-2 text-purple-300 text-sm cursor-pointer">
+                            <input type="checkbox" id="includeQuiz" checked class="rounded bg-purple-900/50 border-purple-700">
+                            Incluir autoevaluación
+                        </label>
+                    </div>
+                    <button onclick="generateProfessionalLesson()" class="w-full btn-spiritual py-3 rounded-xl font-semibold">
+                        <i class="fas fa-wand-magic-sparkles mr-2"></i> Generar Lección Profesional
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        ${state.generatedLesson ? `
+            <div class="gradient-border">
+                <div class="gradient-border-inner p-4">
+                    <div class="flex justify-between items-center mb-4">
+                        <h4 class="text-white font-semibold">✨ Lección Generada</h4>
+                        <button onclick="state.generatedLesson=null;render()" class="text-purple-400 hover:text-white text-sm"><i class="fas fa-times"></i></button>
+                    </div>
+                    <div class="space-y-3">
+                        <div class="bg-purple-900/30 rounded-lg p-3">
+                            <span class="text-purple-400 text-xs">Título:</span>
+                            <p class="text-white font-medium">${state.generatedLesson.title}</p>
+                        </div>
+                        <div class="bg-purple-900/30 rounded-lg p-3">
+                            <span class="text-purple-400 text-xs">Tipo:</span>
+                            <p class="text-white capitalize">${state.generatedLesson.type} • ${state.generatedLesson.duration}</p>
+                        </div>
+                        <div class="bg-purple-900/30 rounded-lg p-3 max-h-48 overflow-y-auto">
+                            <span class="text-purple-400 text-xs">Vista previa del contenido:</span>
+                            <div class="lesson-content text-sm mt-2">${state.generatedLesson.content.substring(0, 500)}...</div>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="addLessonToCourse()" class="flex-1 btn-spiritual py-2 rounded-lg text-sm">
+                                <i class="fas fa-plus mr-1"></i> Agregar a Curso
+                            </button>
+                            <button onclick="copyLessonContent()" class="btn-secondary px-4 py-2 rounded-lg text-sm">
+                                <i class="fas fa-copy"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        ` : `
+            <div class="gradient-border h-full">
+                <div class="gradient-border-inner p-8 flex items-center justify-center h-full">
+                    <div class="text-center">
+                        <div class="text-6xl mb-4 opacity-50">📚</div>
+                        <p class="text-purple-400">Tu lección generada aparecerá aquí</p>
+                    </div>
+                </div>
+            </div>
+        `}
+    </div>`;
+}
+
+// Render Exams Tab
+function renderSuperAgentExams() {
+    return `<div class="grid lg:grid-cols-2 gap-6">
+        <div class="gradient-border">
+            <div class="gradient-border-inner p-4">
+                <h4 class="text-white font-semibold mb-4 flex items-center gap-2">
+                    <i class="fas fa-clipboard-list text-purple-400"></i>
+                    Generar Examen Profesional
+                </h4>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-purple-300 text-sm mb-2">Tema del examen *</label>
+                        <input type="text" id="examTopic" placeholder="ej: Fundamentos del Tarot" class="w-full bg-purple-900/30 border border-purple-700/50 rounded-lg px-4 py-3 text-white placeholder-purple-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-purple-300 text-sm mb-2">Título del examen (opcional)</label>
+                        <input type="text" id="examTitle" placeholder="Se generará automáticamente" class="w-full bg-purple-900/30 border border-purple-700/50 rounded-lg px-4 py-2 text-white placeholder-purple-500 focus:outline-none text-sm">
+                    </div>
+                    <div class="grid grid-cols-3 gap-3">
+                        <div>
+                            <label class="block text-purple-300 text-xs mb-1"># Preguntas</label>
+                            <input type="number" id="examNumQuestions" value="10" min="5" max="30" class="w-full bg-purple-900/30 border border-purple-700/50 rounded-lg px-3 py-2 text-white text-sm focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-purple-300 text-xs mb-1">Tiempo (min)</label>
+                            <input type="number" id="examTimeLimit" value="30" min="10" max="120" class="w-full bg-purple-900/30 border border-purple-700/50 rounded-lg px-3 py-2 text-white text-sm focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-purple-300 text-xs mb-1">% Aprobación</label>
+                            <input type="number" id="examPassingScore" value="70" min="50" max="100" class="w-full bg-purple-900/30 border border-purple-700/50 rounded-lg px-3 py-2 text-white text-sm focus:outline-none">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-purple-300 text-sm mb-2">Dificultad</label>
+                        <select id="examDifficulty" class="w-full bg-purple-900/30 border border-purple-700/50 rounded-lg px-3 py-2 text-white text-sm focus:outline-none">
+                            <option value="easy">🟢 Fácil (5 pts/pregunta)</option>
+                            <option value="medium" selected>🟡 Medio (10 pts/pregunta)</option>
+                            <option value="hard">🔴 Difícil (15 pts/pregunta)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-purple-300 text-sm mb-2">Tipos de preguntas</label>
+                        <div class="grid grid-cols-2 gap-2">
+                            <label class="flex items-center gap-2 text-purple-300 text-sm cursor-pointer bg-purple-900/30 rounded-lg p-2">
+                                <input type="checkbox" id="qtMultipleChoice" checked class="rounded bg-purple-900/50 border-purple-700">
+                                Opción múltiple
+                            </label>
+                            <label class="flex items-center gap-2 text-purple-300 text-sm cursor-pointer bg-purple-900/30 rounded-lg p-2">
+                                <input type="checkbox" id="qtTrueFalse" checked class="rounded bg-purple-900/50 border-purple-700">
+                                Verdadero/Falso
+                            </label>
+                            <label class="flex items-center gap-2 text-purple-300 text-sm cursor-pointer bg-purple-900/30 rounded-lg p-2">
+                                <input type="checkbox" id="qtFillBlank" checked class="rounded bg-purple-900/50 border-purple-700">
+                                Completar
+                            </label>
+                            <label class="flex items-center gap-2 text-purple-300 text-sm cursor-pointer bg-purple-900/30 rounded-lg p-2">
+                                <input type="checkbox" id="qtShortAnswer" class="rounded bg-purple-900/50 border-purple-700">
+                                Respuesta corta
+                            </label>
+                        </div>
+                    </div>
+                    <button onclick="generateProfessionalExam()" class="w-full btn-spiritual py-3 rounded-xl font-semibold">
+                        <i class="fas fa-file-alt mr-2"></i> Generar Examen Profesional
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        ${state.generatedExam ? `
+            <div class="gradient-border">
+                <div class="gradient-border-inner p-4">
+                    <div class="flex justify-between items-center mb-4">
+                        <h4 class="text-white font-semibold">📝 Examen Generado</h4>
+                        <button onclick="state.generatedExam=null;render()" class="text-purple-400 hover:text-white text-sm"><i class="fas fa-times"></i></button>
+                    </div>
+                    <div class="space-y-3">
+                        <div class="bg-purple-900/30 rounded-lg p-3">
+                            <p class="text-white font-medium">${state.generatedExam.title}</p>
+                            <p class="text-purple-400 text-sm">${state.generatedExam.description}</p>
+                        </div>
+                        <div class="grid grid-cols-3 gap-2 text-center">
+                            <div class="bg-purple-900/30 rounded-lg p-2">
+                                <p class="text-2xl font-bold text-white">${state.generatedExam.questions.length}</p>
+                                <p class="text-purple-400 text-xs">Preguntas</p>
+                            </div>
+                            <div class="bg-purple-900/30 rounded-lg p-2">
+                                <p class="text-2xl font-bold text-white">${state.generatedExam.timeLimit}</p>
+                                <p class="text-purple-400 text-xs">Minutos</p>
+                            </div>
+                            <div class="bg-purple-900/30 rounded-lg p-2">
+                                <p class="text-2xl font-bold text-white">${state.generatedExam.totalPoints}</p>
+                                <p class="text-purple-400 text-xs">Puntos</p>
+                            </div>
+                        </div>
+                        <div class="bg-purple-900/30 rounded-lg p-3 max-h-48 overflow-y-auto">
+                            <span class="text-purple-400 text-xs">Preguntas:</span>
+                            <div class="space-y-2 mt-2">
+                                ${state.generatedExam.questions.slice(0, 5).map((q, i) => `
+                                    <div class="text-sm">
+                                        <span class="text-purple-500">${i+1}.</span>
+                                        <span class="text-white">${q.question.substring(0, 60)}...</span>
+                                        <span class="text-xs text-purple-600">[${q.type}]</span>
+                                    </div>
+                                `).join('')}
+                                ${state.generatedExam.questions.length > 5 ? `<p class="text-purple-500 text-xs">... y ${state.generatedExam.questions.length - 5} más</p>` : ''}
+                            </div>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="previewExam()" class="flex-1 btn-secondary py-2 rounded-lg text-sm">
+                                <i class="fas fa-eye mr-1"></i> Vista previa
+                            </button>
+                            <button onclick="addExamToCourse()" class="flex-1 btn-spiritual py-2 rounded-lg text-sm">
+                                <i class="fas fa-plus mr-1"></i> Agregar a Curso
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        ` : `
+            <div class="gradient-border h-full">
+                <div class="gradient-border-inner p-8 flex items-center justify-center h-full">
+                    <div class="text-center">
+                        <div class="text-6xl mb-4 opacity-50">📝</div>
+                        <p class="text-purple-400">Tu examen generado aparecerá aquí</p>
+                    </div>
+                </div>
+            </div>
+        `}
+    </div>`;
+}
+
+// Render Presentations Tab
+function renderSuperAgentPresentations() {
+    return `<div class="grid lg:grid-cols-2 gap-6">
+        <div class="gradient-border">
+            <div class="gradient-border-inner p-4">
+                <h4 class="text-white font-semibold mb-4 flex items-center gap-2">
+                    <i class="fas fa-presentation text-purple-400"></i>
+                    Generar Presentación Profesional
+                </h4>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-purple-300 text-sm mb-2">Tema de la presentación *</label>
+                        <input type="text" id="presTopic" placeholder="ej: Introducción a los Registros Akáshicos" class="w-full bg-purple-900/30 border border-purple-700/50 rounded-lg px-4 py-3 text-white placeholder-purple-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-purple-300 text-sm mb-2">Contenido adicional (opcional)</label>
+                        <textarea id="presContent" rows="3" placeholder="Agrega puntos específicos que quieras incluir..." class="w-full bg-purple-900/30 border border-purple-700/50 rounded-lg px-4 py-3 text-white placeholder-purple-500 focus:outline-none resize-none text-sm"></textarea>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-purple-300 text-xs mb-1">Estilo</label>
+                            <select id="presStyle" class="w-full bg-purple-900/30 border border-purple-700/50 rounded-lg px-3 py-2 text-white text-sm focus:outline-none">
+                                <option value="spiritual" selected>✨ Espiritual</option>
+                                <option value="modern">🌐 Moderno</option>
+                                <option value="nature">🌿 Naturaleza</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-purple-300 text-xs mb-1"># Slides</label>
+                            <input type="number" id="presNumSlides" value="10" min="5" max="20" class="w-full bg-purple-900/30 border border-purple-700/50 rounded-lg px-3 py-2 text-white text-sm focus:outline-none">
+                        </div>
+                    </div>
+                    <div class="space-y-2">
+                        <label class="flex items-center gap-2 text-purple-300 text-sm cursor-pointer">
+                            <input type="checkbox" id="presAnimations" checked class="rounded bg-purple-900/50 border-purple-700">
+                            Incluir animaciones
+                        </label>
+                        <label class="flex items-center gap-2 text-purple-300 text-sm cursor-pointer">
+                            <input type="checkbox" id="presDiagrams" checked class="rounded bg-purple-900/50 border-purple-700">
+                            Incluir diagramas (Mermaid)
+                        </label>
+                        <label class="flex items-center gap-2 text-purple-300 text-sm cursor-pointer">
+                            <input type="checkbox" id="presQuiz" class="rounded bg-purple-900/50 border-purple-700">
+                            Incluir slides de quiz interactivo
+                        </label>
+                    </div>
+                    <button onclick="generateProfessionalPresentation()" class="w-full btn-spiritual py-3 rounded-xl font-semibold">
+                        <i class="fas fa-film mr-2"></i> Generar Presentación
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        ${state.generatedPresentation ? `
+            <div class="gradient-border">
+                <div class="gradient-border-inner p-4">
+                    <div class="flex justify-between items-center mb-4">
+                        <h4 class="text-white font-semibold">🎬 Presentación Generada</h4>
+                        <button onclick="state.generatedPresentation=null;render()" class="text-purple-400 hover:text-white text-sm"><i class="fas fa-times"></i></button>
+                    </div>
+                    <div class="space-y-3">
+                        <div class="bg-purple-900/30 rounded-lg p-3">
+                            <p class="text-white font-medium">${state.generatedPresentation.title}</p>
+                            <p class="text-purple-400 text-sm">Estilo: ${state.generatedPresentation.style} • ${state.generatedPresentation.slides.length} slides</p>
+                        </div>
+                        <div class="bg-purple-900/30 rounded-lg p-3 max-h-48 overflow-y-auto">
+                            <span class="text-purple-400 text-xs">Estructura:</span>
+                            <div class="space-y-1 mt-2">
+                                ${state.generatedPresentation.slides.map((s, i) => `
+                                    <div class="text-sm flex items-center gap-2">
+                                        <span class="w-5 h-5 rounded bg-purple-800 flex items-center justify-center text-xs text-purple-300">${i+1}</span>
+                                        <span class="text-purple-300 text-xs">[${s.type}]</span>
+                                        <span class="text-white truncate">${s.title || s.quote?.substring(0, 30) || 'Slide ' + (i+1)}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="previewPresentation()" class="flex-1 btn-secondary py-2 rounded-lg text-sm">
+                                <i class="fas fa-eye mr-1"></i> Vista previa
+                            </button>
+                            <button onclick="openFullPresentation()" class="flex-1 btn-spiritual py-2 rounded-lg text-sm">
+                                <i class="fas fa-external-link-alt mr-1"></i> Abrir completa
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        ` : `
+            <div class="gradient-border h-full">
+                <div class="gradient-border-inner p-8 flex items-center justify-center h-full">
+                    <div class="text-center">
+                        <div class="text-6xl mb-4 opacity-50">🎬</div>
+                        <p class="text-purple-400">Tu presentación generada aparecerá aquí</p>
+                    </div>
+                </div>
+            </div>
+        `}
+    </div>`;
+}
+
+// Render Exam Preview Modal
+function renderExamPreviewModal() {
+    if (!state.generatedExam) return '';
+    
+    return `<div class="fixed inset-0 modal-overlay z-50 flex items-center justify-center p-4" onclick="if(event.target===this){state.showExamPreview=false;render()}">
+        <div class="gradient-border w-full max-w-4xl max-h-[90vh] overflow-y-auto slide-up">
+            <div class="gradient-border-inner">
+                <div class="flex justify-between items-center p-6 border-b border-purple-800/30">
+                    <div>
+                        <h3 class="font-cinzel text-xl text-white">${state.generatedExam.title}</h3>
+                        <p class="text-purple-400 text-sm">${state.generatedExam.questions.length} preguntas • ${state.generatedExam.timeLimit} min • ${state.generatedExam.passingScore}% para aprobar</p>
+                    </div>
+                    <button onclick="state.showExamPreview=false;state.examResults=null;render()" class="text-purple-400 hover:text-white"><i class="fas fa-times text-xl"></i></button>
+                </div>
+                
+                <div class="p-6 space-y-6">
+                    ${state.examResults ? `
+                        <!-- Results -->
+                        <div class="gradient-border mb-6">
+                            <div class="gradient-border-inner p-6 text-center">
+                                <div class="text-5xl mb-2">${state.examResults.score.passed ? '🎉' : '📚'}</div>
+                                <h4 class="text-2xl font-bold ${state.examResults.score.passed ? 'text-green-400' : 'text-amber-400'}">${state.examResults.score.passed ? '¡Aprobaste!' : 'Sigue Practicando'}</h4>
+                                <p class="text-3xl font-bold text-white my-2">${state.examResults.score.percentage}%</p>
+                                <p class="text-purple-300">${state.examResults.score.correct} de ${state.examResults.score.total} correctas • ${state.examResults.score.earnedPoints}/${state.examResults.score.totalPoints} puntos</p>
+                                <p class="text-purple-400 text-sm mt-4">${state.examResults.feedback}</p>
+                            </div>
+                        </div>
+                        
+                        <!-- Detailed Results -->
+                        ${state.examResults.results.map((r, i) => `
+                            <div class="gradient-border ${r.isCorrect ? 'border-green-600/30' : 'border-red-600/30'}">
+                                <div class="gradient-border-inner p-4">
+                                    <div class="flex items-start gap-3">
+                                        <span class="w-8 h-8 rounded-full ${r.isCorrect ? 'bg-green-600' : 'bg-red-600'} flex items-center justify-center text-white font-bold">${i+1}</span>
+                                        <div class="flex-1">
+                                            <p class="text-white mb-2">${r.question}</p>
+                                            <p class="text-sm ${r.isCorrect ? 'text-green-400' : 'text-red-400'}">
+                                                Tu respuesta: ${r.userAnswer || 'Sin respuesta'}
+                                            </p>
+                                            ${!r.isCorrect ? `<p class="text-sm text-purple-400">Respuesta correcta: ${r.correctAnswer}</p>` : ''}
+                                            ${r.explanation ? `<p class="text-sm text-purple-500 mt-2 italic">${r.explanation}</p>` : ''}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        `).join('')}
+                    ` : `
+                        <!-- Questions -->
+                        ${state.generatedExam.questions.map((q, i) => `
+                            <div class="gradient-border">
+                                <div class="gradient-border-inner p-4">
+                                    <div class="flex items-start gap-3">
+                                        <span class="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center text-white font-bold">${i+1}</span>
+                                        <div class="flex-1">
+                                            <p class="text-white mb-3">${q.question}</p>
+                                            ${renderQuestionInput(q, i)}
+                                        </div>
+                                        <span class="text-purple-500 text-sm">${q.points} pts</span>
+                                    </div>
+                                </div>
+                            </div>
+                        `).join('')}
+                        
+                        <button onclick="submitExamPreview()" class="w-full btn-spiritual py-3 rounded-xl font-semibold">
+                            <i class="fas fa-paper-plane mr-2"></i> Enviar Respuestas
+                        </button>
+                    `}
+                </div>
+            </div>
+        </div>
+    </div>`;
+}
+
+// Render question input based on type
+function renderQuestionInput(question, index) {
+    switch (question.type) {
+        case 'multiple_choice':
+            return `<div class="space-y-2">
+                ${question.options.map((opt, oi) => `
+                    <label class="flex items-center gap-2 cursor-pointer bg-purple-900/30 rounded-lg p-2 hover:bg-purple-800/30 transition-colors">
+                        <input type="radio" name="q${index}" value="${opt}" onchange="state.examAnswers[${index}]='${opt}'" class="text-purple-600">
+                        <span class="text-purple-300">${opt}</span>
+                    </label>
+                `).join('')}
+            </div>`;
+            
+        case 'true_false':
+            return `<div class="flex gap-4">
+                <label class="flex items-center gap-2 cursor-pointer bg-purple-900/30 rounded-lg px-4 py-2 hover:bg-purple-800/30">
+                    <input type="radio" name="q${index}" value="Verdadero" onchange="state.examAnswers[${index}]='Verdadero'" class="text-purple-600">
+                    <span class="text-green-400">Verdadero</span>
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer bg-purple-900/30 rounded-lg px-4 py-2 hover:bg-purple-800/30">
+                    <input type="radio" name="q${index}" value="Falso" onchange="state.examAnswers[${index}]='Falso'" class="text-purple-600">
+                    <span class="text-red-400">Falso</span>
+                </label>
+            </div>`;
+            
+        case 'fill_blank':
+        case 'short_answer':
+            return `<input type="text" placeholder="Tu respuesta..." oninput="state.examAnswers[${index}]=this.value" class="w-full bg-purple-900/30 border border-purple-700/50 rounded-lg px-4 py-2 text-white placeholder-purple-500 focus:outline-none">`;
+            
+        case 'essay':
+            return `<textarea rows="4" placeholder="Escribe tu respuesta..." oninput="state.examAnswers[${index}]=this.value" class="w-full bg-purple-900/30 border border-purple-700/50 rounded-lg px-4 py-3 text-white placeholder-purple-500 focus:outline-none resize-none"></textarea>`;
+            
+        default:
+            return `<input type="text" placeholder="Tu respuesta..." oninput="state.examAnswers[${index}]=this.value" class="w-full bg-purple-900/30 border border-purple-700/50 rounded-lg px-4 py-2 text-white placeholder-purple-500 focus:outline-none">`;
+    }
+}
+
+// Copy lesson content to clipboard
+function copyLessonContent() {
+    if (!state.generatedLesson) return;
+    navigator.clipboard.writeText(state.generatedLesson.content);
+    showToast('Contenido copiado al portapapeles', 'success');
+}
+
+// Add generated lesson to a course (to be implemented with course selection)
+function addLessonToCourse() {
+    showToast('Selecciona un curso para agregar la lección', 'info');
+    // This would open a course selection modal
+}
+
+// Add generated exam to a course (to be implemented)
+function addExamToCourse() {
+    showToast('Selecciona un curso para agregar el examen', 'info');
+    // This would open a course selection modal
 }
 
 // Initialize

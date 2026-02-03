@@ -110,6 +110,32 @@
 | 🙌 Sanador | Reiki y Sanación | 🔒 Nivel 3 |
 | 🎓 Creador | Asistente IA para Maestros | ✅ Para Maestros |
 
+### 10. 🤖 SUPER AGENTE - Creador de Clases Profesionales
+
+El **Super Agente** es una herramienta avanzada para maestros que permite crear contenido educativo de calidad profesional de forma automática.
+
+#### 📚 Generador de Lecciones Profesionales
+- **Estructura completa**: Objetivos, contenido, ejercicios y autoevaluación
+- **Personalización**: Tipo de lección (video/lesson/practice), duración, público objetivo
+- **Formato HTML profesional**: Cajas de notas, ejercicios destacados, estructura visual
+- **Múltiples categorías**: Detecta automáticamente la categoría (Tarot, Reiki, Akáshicos, etc.)
+
+#### 📝 Generador de Exámenes Profesionales
+| Característica | Descripción |
+|---------------|-------------|
+| **Tipos de preguntas** | Opción múltiple, Verdadero/Falso, Completar, Respuesta corta |
+| **Dificultad** | Fácil (5 pts), Medio (10 pts), Difícil (15 pts) |
+| **Configuración** | # preguntas, tiempo límite, % de aprobación |
+| **Retroalimentación** | Explicaciones detalladas para cada respuesta |
+| **Evaluación automática** | Calificación instantánea con resultados detallados |
+
+#### 🎬 Generador de Presentaciones con Reveal.js
+- **Estilos**: Espiritual (púrpura/rosa), Moderno (azul), Naturaleza (verde)
+- **Tipos de slides**: Título, Contenido, Bullets, Cita, Diagrama, Quiz, Resumen
+- **Diagramas Mermaid**: Genera diagramas automáticos según el tema
+- **Animaciones**: Transiciones y efectos opcionales
+- **Exportación**: Abre presentación completa en nueva ventana
+
 ## 🔌 API Endpoints
 
 ### Autenticación
@@ -140,6 +166,17 @@
 | POST | `/api/ai/process-file` | Procesar archivo (Word/PDF/PPT) |
 | POST | `/api/ai/generate-presentation` | Generar presentación |
 | POST | `/api/ai/chat` | Chat con asistente IA |
+
+### 🤖 Super Agente - Creador Profesional
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| POST | `/api/super-agent/generate-lesson` | Generar lección profesional |
+| POST | `/api/super-agent/generate-exam` | Generar examen profesional |
+| POST | `/api/super-agent/generate-presentation` | Generar presentación Reveal.js |
+| GET | `/api/super-agent/exams/:examId` | Obtener examen |
+| POST | `/api/super-agent/exams/:examId/submit` | Enviar respuestas de examen |
+| GET | `/api/super-agent/presentations/:id` | Obtener presentación |
+| GET | `/api/super-agent/courses/:id/exams` | Listar exámenes de un curso |
 
 ### Maestros y Alumnos
 | Método | Ruta | Descripción |
@@ -238,16 +275,20 @@ En la pantalla de bienvenida puedes ingresar con cuentas demo para probar:
 ### Para Maestros
 1. **Registrarse** seleccionando el rol "Maestro"
 2. **Ir a "Mi Escuela"** en el menú principal
-3. **Crear cursos** usando:
+3. **Usar el Super Agente IA** (botón principal):
+   - 📚 **Lecciones**: Genera lecciones profesionales con objetivos, ejercicios y autoevaluación
+   - 📝 **Exámenes**: Crea exámenes con múltiples tipos de preguntas y evaluación automática
+   - 🎬 **Presentaciones**: Genera presentaciones con Reveal.js, diagramas y animaciones
+4. **Crear cursos** usando:
    - 🪄 **IA**: Ingresa un tema y genera automáticamente
    - 📄 **Archivo**: Sube Word/PDF/PowerPoint
    - ✏️ **Manual**: Crea desde cero
-4. **Gestionar lecciones**:
+5. **Gestionar lecciones**:
    - Agregar nuevas lecciones
    - Editar contenido con HTML
    - Agregar videos de YouTube
    - Generar presentaciones/slides
-5. **Gestionar alumnos**:
+6. **Gestionar alumnos**:
    - Agregar alumnos por email
    - Inscribirlos en cursos
    - Ver su progreso

@@ -1846,6 +1846,1104 @@ app.get('/api/chat/history/:userId', async (c) => {
 })
 
 // ============================================================
+// SUPER AGENTE - SISTEMA DE CREACIÓN DE CLASES PROFESIONALES
+// ============================================================
+
+// Store for generated exams and presentations
+const superAgentStore = {
+  exams: new Map<string, any>(),
+  presentations: new Map<string, any>(),
+  lessonDrafts: new Map<string, any>()
+}
+
+// Types for Super Agent
+interface ExamQuestion {
+  id: string
+  type: 'multiple_choice' | 'true_false' | 'fill_blank' | 'matching' | 'short_answer' | 'essay'
+  question: string
+  options?: string[]
+  correctAnswer: string | string[]
+  explanation: string
+  difficulty: 'easy' | 'medium' | 'hard'
+  points: number
+  topic: string
+}
+
+interface Exam {
+  id: string
+  title: string
+  description: string
+  courseId?: string
+  lessonId?: string
+  questions: ExamQuestion[]
+  totalPoints: number
+  timeLimit: number // minutes
+  passingScore: number // percentage
+  createdAt: string
+  teacherId: string
+}
+
+interface ProfessionalSlide {
+  id: string
+  type: 'title' | 'content' | 'two_column' | 'image_text' | 'bullets' | 'quote' | 'code' | 'diagram' | 'video' | 'quiz' | 'summary'
+  title?: string
+  subtitle?: string
+  content?: string
+  bullets?: string[]
+  leftContent?: string
+  rightContent?: string
+  imageUrl?: string
+  imagePosition?: 'left' | 'right' | 'center' | 'background'
+  quote?: string
+  quoteAuthor?: string
+  code?: string
+  codeLanguage?: string
+  diagramCode?: string // Mermaid diagram
+  videoUrl?: string
+  quizQuestion?: string
+  quizOptions?: string[]
+  quizAnswer?: number
+  background: string
+  transition?: string
+  notes?: string
+  animations?: string[]
+}
+
+// SUPER AGENTE: Generar Lección Profesional Completa
+app.post('/api/super-agent/generate-lesson', async (c) => {
+  const { teacherId, topic, lessonType, duration, objectives, targetAudience, includeExercises, includeQuiz } = await c.req.json()
+  
+  const teacher = dataStore.members.find(m => m.id === teacherId && m.role === 'teacher')
+  if (!teacher) return c.json({ error: 'Solo los maestros pueden usar el Super Agente' }, 403)
+  
+  // Generate professional lesson content
+  const lesson = generateProfessionalLesson(topic, lessonType, duration, objectives, targetAudience, includeExercises, includeQuiz)
+  
+  // Store draft for review
+  const draftId = generateId()
+  superAgentStore.lessonDrafts.set(draftId, {
+    ...lesson,
+    teacherId,
+    status: 'draft',
+    createdAt: new Date().toISOString()
+  })
+  
+  return c.json({
+    success: true,
+    draftId,
+    lesson,
+    message: 'Lección profesional generada. Revisa y personaliza antes de publicar.'
+  })
+})
+
+// SUPER AGENTE: Generar Examen Profesional
+app.post('/api/super-agent/generate-exam', async (c) => {
+  const { 
+    teacherId, 
+    title,
+    topic, 
+    courseId, 
+    lessonId,
+    numQuestions, 
+    questionTypes,
+    difficulty,
+    timeLimit,
+    passingScore,
+    includeExplanations
+  } = await c.req.json()
+  
+  const teacher = dataStore.members.find(m => m.id === teacherId && m.role === 'teacher')
+  if (!teacher) return c.json({ error: 'Solo los maestros pueden crear exámenes' }, 403)
+  
+  // Generate professional exam
+  const exam = generateProfessionalExam(
+    title || `Examen: ${topic}`,
+    topic,
+    numQuestions || 10,
+    questionTypes || ['multiple_choice', 'true_false', 'fill_blank'],
+    difficulty || 'medium',
+    timeLimit || 30,
+    passingScore || 70,
+    includeExplanations !== false
+  )
+  
+  exam.teacherId = teacherId
+  exam.courseId = courseId
+  exam.lessonId = lessonId
+  
+  // Store exam
+  superAgentStore.exams.set(exam.id, exam)
+  
+  return c.json({
+    success: true,
+    exam,
+    message: `Examen generado con ${exam.questions.length} preguntas profesionales.`
+  })
+})
+
+// SUPER AGENTE: Generar Presentación Profesional con Reveal.js
+app.post('/api/super-agent/generate-presentation', async (c) => {
+  const { 
+    teacherId, 
+    topic, 
+    content,
+    lessonId,
+    courseId,
+    style,
+    numSlides,
+    includeAnimations,
+    includeDiagrams,
+    includeQuizSlides
+  } = await c.req.json()
+  
+  const teacher = dataStore.members.find(m => m.id === teacherId && m.role === 'teacher')
+  if (!teacher) return c.json({ error: 'Solo los maestros pueden generar presentaciones' }, 403)
+  
+  // Generate professional presentation
+  const presentation = generateProfessionalPresentation(
+    topic,
+    content,
+    style || 'spiritual',
+    numSlides || 10,
+    includeAnimations !== false,
+    includeDiagrams !== false,
+    includeQuizSlides !== false
+  )
+  
+  const presentationId = generateId()
+  const fullPresentation = {
+    id: presentationId,
+    ...presentation,
+    teacherId,
+    lessonId,
+    courseId,
+    createdAt: new Date().toISOString()
+  }
+  
+  superAgentStore.presentations.set(presentationId, fullPresentation)
+  
+  return c.json({
+    success: true,
+    presentationId,
+    presentation: fullPresentation,
+    revealHtml: generateRevealJsHtml(fullPresentation),
+    message: `Presentación generada con ${presentation.slides.length} slides profesionales.`
+  })
+})
+
+// SUPER AGENTE: Obtener Examen
+app.get('/api/super-agent/exams/:examId', async (c) => {
+  const examId = c.req.param('examId')
+  const exam = superAgentStore.exams.get(examId)
+  
+  if (!exam) return c.json({ error: 'Examen no encontrado' }, 404)
+  return c.json(exam)
+})
+
+// SUPER AGENTE: Enviar Respuestas de Examen
+app.post('/api/super-agent/exams/:examId/submit', async (c) => {
+  const examId = c.req.param('examId')
+  const { userId, answers } = await c.req.json()
+  
+  const exam = superAgentStore.exams.get(examId)
+  if (!exam) return c.json({ error: 'Examen no encontrado' }, 404)
+  
+  // Grade the exam
+  let correctCount = 0
+  let totalPoints = 0
+  let earnedPoints = 0
+  const results: any[] = []
+  
+  exam.questions.forEach((q: ExamQuestion, index: number) => {
+    const userAnswer = answers[index]
+    const isCorrect = checkAnswer(q, userAnswer)
+    
+    totalPoints += q.points
+    if (isCorrect) {
+      correctCount++
+      earnedPoints += q.points
+    }
+    
+    results.push({
+      questionId: q.id,
+      question: q.question,
+      userAnswer,
+      correctAnswer: q.correctAnswer,
+      isCorrect,
+      points: isCorrect ? q.points : 0,
+      explanation: q.explanation
+    })
+  })
+  
+  const percentage = Math.round((earnedPoints / totalPoints) * 100)
+  const passed = percentage >= exam.passingScore
+  
+  // Update user progress
+  const member = dataStore.members.find(m => m.id === userId)
+  if (member) {
+    member.points += earnedPoints
+    if (passed) {
+      member.points += 25 // Bonus for passing
+    }
+  }
+  
+  return c.json({
+    success: true,
+    score: {
+      correct: correctCount,
+      total: exam.questions.length,
+      earnedPoints,
+      totalPoints,
+      percentage,
+      passed,
+      passingScore: exam.passingScore
+    },
+    results,
+    feedback: passed 
+      ? '¡Felicidades! Has aprobado el examen. Tu conocimiento brilla con luz propia. ✨'
+      : 'Continúa practicando. Cada intento es un paso más hacia la maestría. 🙏'
+  })
+})
+
+// SUPER AGENTE: Obtener Presentación
+app.get('/api/super-agent/presentations/:presentationId', async (c) => {
+  const presentationId = c.req.param('presentationId')
+  const presentation = superAgentStore.presentations.get(presentationId)
+  
+  if (!presentation) return c.json({ error: 'Presentación no encontrada' }, 404)
+  return c.json({
+    ...presentation,
+    revealHtml: generateRevealJsHtml(presentation)
+  })
+})
+
+// SUPER AGENTE: Listar exámenes de un curso
+app.get('/api/super-agent/courses/:courseId/exams', async (c) => {
+  const courseId = c.req.param('courseId')
+  const exams = Array.from(superAgentStore.exams.values())
+    .filter(e => e.courseId === courseId)
+  
+  return c.json(exams)
+})
+
+// Helper: Check if answer is correct
+function checkAnswer(question: ExamQuestion, userAnswer: any): boolean {
+  if (!userAnswer) return false
+  
+  switch (question.type) {
+    case 'multiple_choice':
+    case 'true_false':
+      return userAnswer.toString().toLowerCase() === question.correctAnswer.toString().toLowerCase()
+    case 'fill_blank':
+      return userAnswer.toString().toLowerCase().trim() === question.correctAnswer.toString().toLowerCase().trim()
+    case 'matching':
+      if (Array.isArray(question.correctAnswer) && Array.isArray(userAnswer)) {
+        return question.correctAnswer.every((ans, i) => ans === userAnswer[i])
+      }
+      return false
+    case 'short_answer':
+    case 'essay':
+      // For short answers and essays, we'd need AI grading - for now accept if not empty
+      return userAnswer.toString().trim().length > 10
+    default:
+      return false
+  }
+}
+
+// Helper: Generate Professional Lesson Content
+function generateProfessionalLesson(
+  topic: string, 
+  lessonType: string, 
+  duration: string, 
+  objectives: string[], 
+  targetAudience: string,
+  includeExercises: boolean,
+  includeQuiz: boolean
+): any {
+  const topicLower = topic.toLowerCase()
+  let category = detectCategory(topic)
+  
+  // Generate rich HTML content
+  let content = `<div class="lesson-professional">
+  
+  <div class="learning-objectives">
+    <h3>🎯 Objetivos de Aprendizaje</h3>
+    <ul>
+      ${(objectives || ['Comprender los fundamentos', 'Aplicar técnicas básicas', 'Desarrollar práctica personal']).map(obj => `<li>${obj}</li>`).join('\n      ')}
+    </ul>
+  </div>
+  
+  <h2>✨ ${topic}</h2>
+  <p class="intro-text">Bienvenido a esta lección transformadora donde exploraremos los misterios y prácticas de ${topic}. Esta enseñanza está diseñada para ${targetAudience || 'buscadores espirituales de todos los niveles'}.</p>
+  
+  <div class="section-divider"></div>
+  
+  <h3>📖 Fundamentos Esenciales</h3>
+  <p>Para comprender verdaderamente ${topic}, debemos primero establecer una base sólida de conocimiento. Los principios fundamentales que guiarán nuestro aprendizaje son:</p>
+  
+  <div class="key-concept-box">
+    <h4>💡 Concepto Clave</h4>
+    <p>El verdadero aprendizaje espiritual no es solo intelectual, sino experiencial. Cada práctica que compartimos está diseñada para ser vivida, no solo comprendida.</p>
+  </div>
+  
+  <h3>🌟 Desarrollo del Tema</h3>
+  <p>A medida que profundizamos en ${topic}, descubriremos capas de significado que enriquecerán nuestra práctica. Es importante mantener una mente abierta y un corazón receptivo.</p>
+  
+  <div class="two-column-layout">
+    <div class="column">
+      <h4>Aspectos Teóricos</h4>
+      <ul>
+        <li>Historia y orígenes</li>
+        <li>Principios fundamentales</li>
+        <li>Marco conceptual</li>
+        <li>Conexiones con otras tradiciones</li>
+      </ul>
+    </div>
+    <div class="column">
+      <h4>Aspectos Prácticos</h4>
+      <ul>
+        <li>Técnicas básicas</li>
+        <li>Ejercicios guiados</li>
+        <li>Aplicación diaria</li>
+        <li>Desarrollo progresivo</li>
+      </ul>
+    </div>
+  </div>`
+
+  if (includeExercises) {
+    content += `
+  
+  <div class="practice-section">
+    <h3>🎯 Ejercicio Práctico</h3>
+    <div class="exercise-box">
+      <h4>Ejercicio 1: Preparación y Centrado</h4>
+      <ol>
+        <li>Encuentra un espacio tranquilo donde no serás interrumpido</li>
+        <li>Siéntate cómodamente con la columna recta</li>
+        <li>Cierra los ojos y realiza 3 respiraciones profundas</li>
+        <li>Establece tu intención para esta práctica</li>
+        <li>Permanece en este estado receptivo por 5 minutos</li>
+      </ol>
+      <p class="exercise-note">⏱️ Tiempo estimado: 10 minutos</p>
+    </div>
+    
+    <div class="exercise-box">
+      <h4>Ejercicio 2: Aplicación del Conocimiento</h4>
+      <ol>
+        <li>Revisa los conceptos principales de esta lección</li>
+        <li>Identifica cómo aplicarlos en tu vida diaria</li>
+        <li>Escribe 3 formas concretas de integrar este aprendizaje</li>
+        <li>Comparte tu reflexión en la comunidad</li>
+      </ol>
+      <p class="exercise-note">⏱️ Tiempo estimado: 15 minutos</p>
+    </div>
+  </div>`
+  }
+
+  if (includeQuiz) {
+    content += `
+  
+  <div class="self-assessment">
+    <h3>📝 Autoevaluación</h3>
+    <p>Responde estas preguntas para verificar tu comprensión:</p>
+    
+    <div class="quiz-question">
+      <p><strong>1.</strong> ¿Cuáles son los principios fundamentales de ${topic}?</p>
+    </div>
+    
+    <div class="quiz-question">
+      <p><strong>2.</strong> ¿Cómo aplicarías estos conceptos en tu práctica diaria?</p>
+    </div>
+    
+    <div class="quiz-question">
+      <p><strong>3.</strong> ¿Qué aspectos te gustaría profundizar más?</p>
+    </div>
+  </div>`
+  }
+
+  content += `
+  
+  <div class="summary-box">
+    <h3>📋 Resumen de la Lección</h3>
+    <ul>
+      <li>Exploramos los fundamentos de ${topic}</li>
+      <li>Aprendimos técnicas prácticas para aplicar en nuestra vida</li>
+      <li>Desarrollamos una comprensión más profunda del tema</li>
+    </ul>
+  </div>
+  
+  <div class="next-steps">
+    <h3>➡️ Próximos Pasos</h3>
+    <p>Para continuar tu desarrollo:</p>
+    <ol>
+      <li>Practica los ejercicios diariamente durante una semana</li>
+      <li>Lleva un diario de tus experiencias</li>
+      <li>Comparte tus descubrimientos en la comunidad</li>
+      <li>Avanza a la siguiente lección cuando te sientas preparado</li>
+    </ol>
+  </div>
+  
+  <div class="closing-blessing">
+    <p>🙏 Que la luz guíe tu camino y que este conocimiento florezca en tu corazón.</p>
+  </div>
+  
+</div>`
+
+  return {
+    title: `✨ ${topic}`,
+    type: lessonType || 'lesson',
+    content,
+    duration: duration || '45min',
+    objectives: objectives || ['Comprender los fundamentos', 'Aplicar técnicas básicas', 'Desarrollar práctica personal'],
+    targetAudience: targetAudience || 'Todos los niveles',
+    category,
+    hasExercises: includeExercises,
+    hasQuiz: includeQuiz
+  }
+}
+
+// Helper: Generate Professional Exam
+function generateProfessionalExam(
+  title: string,
+  topic: string,
+  numQuestions: number,
+  questionTypes: string[],
+  difficulty: string,
+  timeLimit: number,
+  passingScore: number,
+  includeExplanations: boolean
+): Exam {
+  const examId = generateId()
+  const questions: ExamQuestion[] = []
+  const topicLower = topic.toLowerCase()
+  
+  // Question templates based on topic
+  const questionBank = getQuestionBankForTopic(topic)
+  
+  // Generate questions based on types requested
+  let questionsPerType = Math.ceil(numQuestions / questionTypes.length)
+  
+  questionTypes.forEach(type => {
+    const typeQuestions = questionBank
+      .filter(q => q.type === type)
+      .slice(0, questionsPerType)
+    questions.push(...typeQuestions)
+  })
+  
+  // Trim to exact number requested and assign IDs
+  const finalQuestions = questions.slice(0, numQuestions).map((q, index) => ({
+    ...q,
+    id: `q-${examId}-${index}`,
+    difficulty: difficulty as 'easy' | 'medium' | 'hard',
+    points: difficulty === 'easy' ? 5 : difficulty === 'medium' ? 10 : 15,
+    topic,
+    explanation: includeExplanations ? q.explanation : ''
+  }))
+  
+  return {
+    id: examId,
+    title,
+    description: `Examen profesional sobre ${topic}. Este examen evaluará tu comprensión y dominio del tema.`,
+    questions: finalQuestions,
+    totalPoints: finalQuestions.reduce((sum, q) => sum + q.points, 0),
+    timeLimit,
+    passingScore,
+    createdAt: new Date().toISOString(),
+    teacherId: ''
+  }
+}
+
+// Helper: Get question bank for topic
+function getQuestionBankForTopic(topic: string): Partial<ExamQuestion>[] {
+  const topicLower = topic.toLowerCase()
+  
+  // Generic spiritual questions that can apply to many topics
+  const genericQuestions: Partial<ExamQuestion>[] = [
+    // Multiple Choice
+    {
+      type: 'multiple_choice',
+      question: `¿Cuál es el principio fundamental de ${topic}?`,
+      options: ['La conexión con la energía universal', 'El control de la mente', 'La acumulación de conocimiento', 'La competencia espiritual'],
+      correctAnswer: 'La conexión con la energía universal',
+      explanation: `En ${topic}, el principio fundamental es establecer una conexión auténtica con la energía universal, permitiendo que fluya a través de nosotros para nuestro mayor bien.`
+    },
+    {
+      type: 'multiple_choice',
+      question: `¿Qué actitud es más importante al practicar ${topic}?`,
+      options: ['Impaciencia por ver resultados', 'Mente abierta y corazón receptivo', 'Escepticismo constante', 'Expectativas altas'],
+      correctAnswer: 'Mente abierta y corazón receptivo',
+      explanation: 'Una mente abierta y un corazón receptivo son esenciales para cualquier práctica espiritual, permitiendo que la sabiduría fluya sin resistencia.'
+    },
+    {
+      type: 'multiple_choice',
+      question: `¿Cuánto tiempo se recomienda practicar ${topic} diariamente para ver resultados?`,
+      options: ['5 segundos', 'Al menos 15-30 minutos', '8 horas continuas', 'Solo los fines de semana'],
+      correctAnswer: 'Al menos 15-30 minutos',
+      explanation: 'La práctica constante de 15-30 minutos diarios permite establecer una rutina que facilita el desarrollo espiritual sostenido.'
+    },
+    
+    // True/False
+    {
+      type: 'true_false',
+      question: `La práctica de ${topic} requiere años de estudio antes de poder experimentar beneficios.`,
+      correctAnswer: 'Falso',
+      explanation: 'Aunque la maestría requiere tiempo, los beneficios de la práctica pueden sentirse desde las primeras sesiones cuando se aborda con sinceridad y apertura.'
+    },
+    {
+      type: 'true_false',
+      question: `En ${topic}, la intención es más importante que la técnica perfecta.`,
+      correctAnswer: 'Verdadero',
+      explanation: 'La intención pura y sincera es el motor de toda práctica espiritual. La técnica se perfecciona con el tiempo, pero la intención debe estar presente desde el inicio.'
+    },
+    {
+      type: 'true_false',
+      question: `Es necesario tener "dones especiales" para practicar ${topic}.`,
+      correctAnswer: 'Falso',
+      explanation: 'Todas las personas tienen la capacidad innata de conectar con su espiritualidad. Los "dones" son simplemente habilidades que se desarrollan con la práctica constante.'
+    },
+    
+    // Fill in the blank
+    {
+      type: 'fill_blank',
+      question: `El primer paso antes de cualquier práctica espiritual es la _______ del espacio y de uno mismo.`,
+      correctAnswer: 'preparación',
+      explanation: 'La preparación adecuada del espacio físico y del estado mental es fundamental para una práctica efectiva.'
+    },
+    {
+      type: 'fill_blank',
+      question: `La _______ es esencial para mantener una práctica espiritual consistente.`,
+      correctAnswer: 'disciplina',
+      explanation: 'La disciplina, entendida como compromiso amoroso con la práctica, es lo que permite el crecimiento espiritual sostenido.'
+    },
+    
+    // Short Answer
+    {
+      type: 'short_answer',
+      question: `Describe en tus propias palabras qué significa ${topic} para ti y cómo lo aplicarías en tu vida diaria.`,
+      correctAnswer: 'Respuesta personal del estudiante',
+      explanation: 'Esta pregunta busca que el estudiante integre el conocimiento de manera personal y significativa.'
+    },
+    {
+      type: 'short_answer',
+      question: `¿Cuáles son los tres beneficios principales que esperas obtener de la práctica de ${topic}?`,
+      correctAnswer: 'Respuesta personal del estudiante',
+      explanation: 'Identificar beneficios personales ayuda a mantener la motivación y el compromiso con la práctica.'
+    },
+    
+    // Matching (simplified format)
+    {
+      type: 'matching',
+      question: `Relaciona los siguientes conceptos con sus definiciones correctas:
+1. Energía Universal
+2. Intención
+3. Práctica diaria
+4. Conexión espiritual`,
+      options: ['A. Propósito claro al realizar una acción', 'B. Fuerza vital que anima todo el universo', 'C. Vínculo con lo trascendente', 'D. Ejercicio regular y constante'],
+      correctAnswer: ['B', 'A', 'D', 'C'],
+      explanation: 'Estos conceptos fundamentales son pilares de cualquier práctica espiritual y es importante comprenderlos claramente.'
+    }
+  ]
+  
+  // Add topic-specific questions
+  if (topicLower.includes('tarot')) {
+    genericQuestions.push(
+      {
+        type: 'multiple_choice',
+        question: '¿Cuántos Arcanos Mayores tiene el Tarot?',
+        options: ['21', '22', '56', '78'],
+        correctAnswer: '22',
+        explanation: 'El Tarot tiene 22 Arcanos Mayores que representan el viaje arquetípico del alma.'
+      },
+      {
+        type: 'multiple_choice',
+        question: '¿Qué elemento representa el palo de Copas?',
+        options: ['Fuego', 'Tierra', 'Aire', 'Agua'],
+        correctAnswer: 'Agua',
+        explanation: 'Las Copas representan el elemento Agua, asociado con las emociones, el amor y las relaciones.'
+      },
+      {
+        type: 'true_false',
+        question: 'El Tarot puede predecir el futuro de forma absoluta y fija.',
+        correctAnswer: 'Falso',
+        explanation: 'El Tarot muestra potenciales y tendencias basadas en la energía actual, pero el futuro siempre puede cambiar con nuestras decisiones.'
+      }
+    )
+  }
+  
+  if (topicLower.includes('reiki')) {
+    genericQuestions.push(
+      {
+        type: 'multiple_choice',
+        question: '¿Quién redescubrió el sistema Reiki moderno?',
+        options: ['Buda Gautama', 'Mikao Usui', 'Jesus de Nazaret', 'Lao Tse'],
+        correctAnswer: 'Mikao Usui',
+        explanation: 'Mikao Usui redescubrió el Reiki en Japón a principios del siglo XX tras una experiencia mística en el Monte Kurama.'
+      },
+      {
+        type: 'multiple_choice',
+        question: '¿Cuántos principios del Reiki existen?',
+        options: ['3', '5', '7', '10'],
+        correctAnswer: '5',
+        explanation: 'Los 5 principios del Reiki son guías éticas para vivir una vida plena y consciente.'
+      },
+      {
+        type: 'fill_blank',
+        question: 'REI significa energía _______ y KI significa fuerza _______.',
+        correctAnswer: 'universal, vital',
+        explanation: 'Reiki combina dos conceptos japoneses: REI (energía universal) y KI (fuerza vital personal).'
+      }
+    )
+  }
+  
+  if (topicLower.includes('akash') || topicLower.includes('registro')) {
+    genericQuestions.push(
+      {
+        type: 'multiple_choice',
+        question: '¿De qué idioma proviene la palabra "Akasha"?',
+        options: ['Latín', 'Griego', 'Sánscrito', 'Hebreo'],
+        correctAnswer: 'Sánscrito',
+        explanation: 'Akasha proviene del sánscrito y significa "éter" o "espacio", refiriéndose al elemento que contiene toda la información.'
+      },
+      {
+        type: 'true_false',
+        question: 'Los Registros Akáshicos contienen información solo de esta vida presente.',
+        correctAnswer: 'Falso',
+        explanation: 'Los Registros Akáshicos contienen información de todas las vidas del alma: pasadas, presente y potenciales futuros.'
+      },
+      {
+        type: 'multiple_choice',
+        question: '¿Qué se necesita para abrir los Registros Akáshicos?',
+        options: ['Poderes sobrenaturales', 'Una oración sagrada e intención pura', 'Equipos especiales', 'Permiso gubernamental'],
+        correctAnswer: 'Una oración sagrada e intención pura',
+        explanation: 'El acceso a los Registros se logra mediante una oración de apertura recitada con intención pura y corazón abierto.'
+      }
+    )
+  }
+  
+  if (topicLower.includes('medita') || topicLower.includes('chakra')) {
+    genericQuestions.push(
+      {
+        type: 'multiple_choice',
+        question: '¿Cuántos chakras principales tiene el cuerpo según la tradición hindú?',
+        options: ['5', '7', '9', '12'],
+        correctAnswer: '7',
+        explanation: 'El sistema tradicional reconoce 7 chakras principales desde la base de la columna hasta la coronilla.'
+      },
+      {
+        type: 'multiple_choice',
+        question: '¿Qué color se asocia con el chakra del corazón?',
+        options: ['Rojo', 'Amarillo', 'Verde', 'Violeta'],
+        correctAnswer: 'Verde',
+        explanation: 'El chakra del corazón (Anahata) se asocia con el color verde, representando el amor, la compasión y la sanación.'
+      },
+      {
+        type: 'fill_blank',
+        question: 'La meditación ayuda a calmar la _______ y conectar con nuestro ser interior.',
+        correctAnswer: 'mente',
+        explanation: 'Uno de los principales beneficios de la meditación es calmar la mente inquieta, permitiendo una conexión más profunda con nuestra esencia.'
+      }
+    )
+  }
+  
+  return genericQuestions
+}
+
+// Helper: Generate Professional Presentation
+function generateProfessionalPresentation(
+  topic: string,
+  content: string,
+  style: string,
+  numSlides: number,
+  includeAnimations: boolean,
+  includeDiagrams: boolean,
+  includeQuizSlides: boolean
+): { slides: ProfessionalSlide[], title: string, style: string } {
+  const slides: ProfessionalSlide[] = []
+  const backgrounds = getBackgroundsForStyle(style)
+  
+  // Title Slide
+  slides.push({
+    id: generateId(),
+    type: 'title',
+    title: topic,
+    subtitle: 'Academia de Luz - Tu Escuela Espiritual',
+    background: backgrounds.title,
+    transition: 'zoom',
+    animations: includeAnimations ? ['fadeIn', 'pulse'] : []
+  })
+  
+  // Introduction Slide
+  slides.push({
+    id: generateId(),
+    type: 'content',
+    title: '🌟 Bienvenidos',
+    content: `En esta sesión exploraremos los misterios de ${topic}. Prepara tu corazón y mente para recibir esta sabiduría ancestral.`,
+    background: backgrounds.content,
+    transition: 'slide',
+    animations: includeAnimations ? ['fadeInUp'] : []
+  })
+  
+  // Objectives Slide
+  slides.push({
+    id: generateId(),
+    type: 'bullets',
+    title: '🎯 Objetivos de la Sesión',
+    bullets: [
+      'Comprender los fundamentos de ' + topic,
+      'Aprender técnicas prácticas aplicables',
+      'Desarrollar tu conexión personal',
+      'Integrar el conocimiento en tu vida diaria'
+    ],
+    background: backgrounds.bullets,
+    transition: 'convex',
+    animations: includeAnimations ? ['fadeInLeft', 'stagger'] : []
+  })
+  
+  // Parse content for additional slides
+  const sections = content ? content.split(/(?=<h[23]>)/gi).filter(s => s.trim()) : []
+  
+  sections.forEach((section, index) => {
+    if (slides.length >= numSlides - 2) return // Leave room for quiz and closing
+    
+    const titleMatch = section.match(/<h[23]>(.+?)<\/h[23]>/i)
+    const sectionTitle = titleMatch ? titleMatch[1].replace(/<[^>]*>/g, '') : `Sección ${index + 1}`
+    
+    // Extract bullet points
+    const listMatch = section.match(/<li>(.+?)<\/li>/gi)
+    const points = listMatch ? listMatch.map(li => li.replace(/<[^>]*>/g, '').trim()).slice(0, 5) : []
+    
+    // Extract paragraphs
+    const paraMatch = section.match(/<p>(.+?)<\/p>/gi)
+    const paragraphs = paraMatch ? paraMatch.map(p => p.replace(/<[^>]*>/g, '').trim()) : []
+    
+    if (points.length > 0) {
+      slides.push({
+        id: generateId(),
+        type: 'bullets',
+        title: sectionTitle,
+        bullets: points,
+        background: backgrounds.bullets,
+        transition: index % 2 === 0 ? 'slide' : 'convex',
+        animations: includeAnimations ? ['fadeInRight', 'stagger'] : []
+      })
+    } else if (paragraphs.length > 0) {
+      slides.push({
+        id: generateId(),
+        type: 'content',
+        title: sectionTitle,
+        content: paragraphs[0].substring(0, 300) + (paragraphs[0].length > 300 ? '...' : ''),
+        background: backgrounds.content,
+        transition: 'fade',
+        animations: includeAnimations ? ['fadeIn'] : []
+      })
+    }
+  })
+  
+  // Add diagram slide if requested
+  if (includeDiagrams && slides.length < numSlides - 1) {
+    slides.push({
+      id: generateId(),
+      type: 'diagram',
+      title: '📊 Visualización del Proceso',
+      diagramCode: generateMermaidDiagram(topic),
+      background: backgrounds.diagram,
+      transition: 'zoom',
+      notes: 'Este diagrama ilustra el flujo de energía y conocimiento en la práctica.'
+    })
+  }
+  
+  // Add quiz slide if requested
+  if (includeQuizSlides && slides.length < numSlides - 1) {
+    slides.push({
+      id: generateId(),
+      type: 'quiz',
+      title: '🧠 Momento de Reflexión',
+      quizQuestion: `¿Cuál es el principio más importante que has aprendido sobre ${topic}?`,
+      quizOptions: [
+        'La conexión con la energía universal',
+        'La importancia de la práctica constante',
+        'El desarrollo de la intuición',
+        'Todas las anteriores'
+      ],
+      quizAnswer: 3,
+      background: backgrounds.quiz,
+      transition: 'concave'
+    })
+  }
+  
+  // Quote Slide
+  slides.push({
+    id: generateId(),
+    type: 'quote',
+    quote: 'La luz que buscas ya habita en tu interior. Solo necesitas recordar cómo brillar.',
+    quoteAuthor: 'Sabiduría de la Academia de Luz',
+    background: backgrounds.quote,
+    transition: 'fade',
+    animations: includeAnimations ? ['fadeIn', 'glow'] : []
+  })
+  
+  // Summary Slide
+  slides.push({
+    id: generateId(),
+    type: 'summary',
+    title: '📋 Resumen',
+    bullets: [
+      'Hemos explorado los fundamentos de ' + topic,
+      'Aprendimos técnicas prácticas aplicables',
+      'Recuerda practicar diariamente',
+      '¡Tu camino espiritual continúa!'
+    ],
+    background: backgrounds.summary,
+    transition: 'slide',
+    animations: includeAnimations ? ['fadeInUp', 'stagger'] : []
+  })
+  
+  // Closing Slide
+  slides.push({
+    id: generateId(),
+    type: 'title',
+    title: '🙏 Namaste',
+    subtitle: 'La luz en mí honra la luz en ti',
+    background: backgrounds.closing,
+    transition: 'zoom',
+    animations: includeAnimations ? ['fadeIn', 'pulse'] : []
+  })
+  
+  return {
+    slides: slides.slice(0, numSlides),
+    title: topic,
+    style
+  }
+}
+
+// Helper: Get backgrounds for style
+function getBackgroundsForStyle(style: string): Record<string, string> {
+  const styles: Record<string, Record<string, string>> = {
+    spiritual: {
+      title: 'linear-gradient(135deg, #1a0a2e 0%, #2d1b4e 50%, #1a0a2e 100%)',
+      content: 'linear-gradient(135deg, #0f0a1e 0%, #1a0f2e 100%)',
+      bullets: 'linear-gradient(135deg, #1a0f2e 0%, #2d1b4e 100%)',
+      diagram: 'linear-gradient(135deg, #0d0619 0%, #1a0a2e 100%)',
+      quiz: 'linear-gradient(135deg, #2d1b4e 0%, #3d2b5e 100%)',
+      quote: 'linear-gradient(135deg, #1a0a2e 0%, #0d0619 100%)',
+      summary: 'linear-gradient(135deg, #1a0f2e 0%, #2d1b4e 100%)',
+      closing: 'linear-gradient(135deg, #2d1b4e 0%, #9333ea 50%, #ec4899 100%)'
+    },
+    modern: {
+      title: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+      content: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+      bullets: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+      diagram: 'linear-gradient(135deg, #020617 0%, #0f172a 100%)',
+      quiz: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+      quote: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+      summary: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+      closing: 'linear-gradient(135deg, #0f172a 0%, #3b82f6 50%, #8b5cf6 100%)'
+    },
+    nature: {
+      title: 'linear-gradient(135deg, #064e3b 0%, #065f46 100%)',
+      content: 'linear-gradient(135deg, #065f46 0%, #047857 100%)',
+      bullets: 'linear-gradient(135deg, #064e3b 0%, #065f46 100%)',
+      diagram: 'linear-gradient(135deg, #022c22 0%, #064e3b 100%)',
+      quiz: 'linear-gradient(135deg, #065f46 0%, #047857 100%)',
+      quote: 'linear-gradient(135deg, #064e3b 0%, #065f46 100%)',
+      summary: 'linear-gradient(135deg, #065f46 0%, #047857 100%)',
+      closing: 'linear-gradient(135deg, #064e3b 0%, #10b981 50%, #34d399 100%)'
+    }
+  }
+  
+  return styles[style] || styles.spiritual
+}
+
+// Helper: Generate Mermaid diagram
+function generateMermaidDiagram(topic: string): string {
+  const topicLower = topic.toLowerCase()
+  
+  if (topicLower.includes('reiki')) {
+    return `graph TB
+    A[🙏 Conexión Universal] --> B[⚡ Canalización]
+    B --> C[🤲 Posición de Manos]
+    C --> D[💫 Flujo de Energía]
+    D --> E[✨ Sanación]
+    E --> F[🌟 Equilibrio]
+    style A fill:#9333ea,color:#fff
+    style F fill:#ec4899,color:#fff`
+  }
+  
+  if (topicLower.includes('tarot')) {
+    return `graph LR
+    A[🃏 Preparación] --> B[🔮 Conexión]
+    B --> C[✨ Pregunta]
+    C --> D[🎴 Tirada]
+    D --> E[📖 Interpretación]
+    E --> F[💫 Guía]
+    style A fill:#9333ea,color:#fff
+    style F fill:#ec4899,color:#fff`
+  }
+  
+  if (topicLower.includes('chakra') || topicLower.includes('medita')) {
+    return `graph TB
+    A[🔴 Raíz] --> B[🟠 Sacro]
+    B --> C[🟡 Plexo Solar]
+    C --> D[💚 Corazón]
+    D --> E[🔵 Garganta]
+    E --> F[💜 Tercer Ojo]
+    F --> G[⚪ Corona]
+    style A fill:#dc2626,color:#fff
+    style G fill:#9333ea,color:#fff`
+  }
+  
+  // Default spiritual journey diagram
+  return `graph TB
+    A[🌱 Iniciación] --> B[📚 Aprendizaje]
+    B --> C[🧘 Práctica]
+    C --> D[✨ Transformación]
+    D --> E[🌟 Maestría]
+    E --> F[🙏 Servicio]
+    style A fill:#9333ea,color:#fff
+    style F fill:#ec4899,color:#fff`
+}
+
+// Helper: Generate Reveal.js HTML
+function generateRevealJsHtml(presentation: any): string {
+  const slidesHtml = presentation.slides.map((slide: ProfessionalSlide) => {
+    let slideContent = ''
+    const bgStyle = `background: ${slide.background};`
+    const transitionAttr = slide.transition ? `data-transition="${slide.transition}"` : ''
+    
+    switch (slide.type) {
+      case 'title':
+        slideContent = `
+          <section ${transitionAttr} style="${bgStyle}">
+            <h1 class="text-5xl font-bold mb-4 glow-text">${slide.title || ''}</h1>
+            ${slide.subtitle ? `<h3 class="text-2xl text-purple-300">${slide.subtitle}</h3>` : ''}
+          </section>`
+        break
+        
+      case 'content':
+        slideContent = `
+          <section ${transitionAttr} style="${bgStyle}">
+            <h2 class="text-4xl font-bold mb-6">${slide.title || ''}</h2>
+            <p class="text-xl leading-relaxed max-w-3xl mx-auto">${slide.content || ''}</p>
+          </section>`
+        break
+        
+      case 'bullets':
+        slideContent = `
+          <section ${transitionAttr} style="${bgStyle}">
+            <h2 class="text-4xl font-bold mb-6">${slide.title || ''}</h2>
+            <ul class="text-left text-xl space-y-4 max-w-2xl mx-auto">
+              ${(slide.bullets || []).map(b => `<li class="fragment fade-in-then-semi-out">${b}</li>`).join('\n              ')}
+            </ul>
+          </section>`
+        break
+        
+      case 'two_column':
+        slideContent = `
+          <section ${transitionAttr} style="${bgStyle}">
+            <h2 class="text-4xl font-bold mb-6">${slide.title || ''}</h2>
+            <div class="flex gap-8">
+              <div class="flex-1">${slide.leftContent || ''}</div>
+              <div class="flex-1">${slide.rightContent || ''}</div>
+            </div>
+          </section>`
+        break
+        
+      case 'quote':
+        slideContent = `
+          <section ${transitionAttr} style="${bgStyle}">
+            <blockquote class="text-3xl italic text-purple-200 max-w-3xl mx-auto">
+              "${slide.quote || ''}"
+            </blockquote>
+            ${slide.quoteAuthor ? `<p class="text-xl text-pink-300 mt-4">— ${slide.quoteAuthor}</p>` : ''}
+          </section>`
+        break
+        
+      case 'diagram':
+        slideContent = `
+          <section ${transitionAttr} style="${bgStyle}">
+            <h2 class="text-4xl font-bold mb-6">${slide.title || ''}</h2>
+            <div class="mermaid">
+              ${slide.diagramCode || ''}
+            </div>
+          </section>`
+        break
+        
+      case 'quiz':
+        slideContent = `
+          <section ${transitionAttr} style="${bgStyle}">
+            <h2 class="text-4xl font-bold mb-6">${slide.title || ''}</h2>
+            <p class="text-2xl mb-8">${slide.quizQuestion || ''}</p>
+            <div class="grid grid-cols-2 gap-4 max-w-2xl mx-auto">
+              ${(slide.quizOptions || []).map((opt, i) => `
+                <button class="quiz-option p-4 rounded-lg bg-purple-900/50 hover:bg-purple-700/50 transition text-lg" data-answer="${i}">
+                  ${String.fromCharCode(65 + i)}. ${opt}
+                </button>
+              `).join('')}
+            </div>
+          </section>`
+        break
+        
+      case 'summary':
+        slideContent = `
+          <section ${transitionAttr} style="${bgStyle}">
+            <h2 class="text-4xl font-bold mb-6">${slide.title || ''}</h2>
+            <ul class="text-left text-xl space-y-3 max-w-2xl mx-auto">
+              ${(slide.bullets || []).map(b => `<li class="fragment">${b}</li>`).join('\n              ')}
+            </ul>
+          </section>`
+        break
+        
+      default:
+        slideContent = `
+          <section ${transitionAttr} style="${bgStyle}">
+            <h2 class="text-4xl font-bold">${slide.title || ''}</h2>
+            <p class="text-xl">${slide.content || ''}</p>
+          </section>`
+    }
+    
+    return slideContent
+  }).join('\n')
+  
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${presentation.title} - Academia de Luz</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.0.4/dist/reveal.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.0.4/dist/theme/black.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <style>
+    .reveal { font-family: 'Quicksand', sans-serif; }
+    .reveal h1, .reveal h2, .reveal h3 { font-family: 'Cinzel', serif; color: #e9d5ff; }
+    .glow-text { text-shadow: 0 0 20px rgba(168,85,247,0.5), 0 0 40px rgba(168,85,247,0.3); }
+    .reveal ul { list-style: none; }
+    .reveal ul li::before { content: "✨ "; }
+    .quiz-option:hover { transform: scale(1.05); }
+    .mermaid { background: transparent !important; }
+  </style>
+</head>
+<body>
+  <div class="reveal">
+    <div class="slides">
+      ${slidesHtml}
+    </div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.0.4/dist/reveal.js"></script>
+  <script>
+    Reveal.initialize({
+      hash: true,
+      transition: 'slide',
+      backgroundTransition: 'fade'
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark' });
+  </script>
+</body>
+</html>`
+}
+
+// ============================================================
 // MAIN HTML PAGE
 // ============================================================
 
