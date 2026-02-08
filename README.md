@@ -171,6 +171,44 @@ Notificación al estudiante con resultados
 - Promedio general de calificaciones
 - Rendimiento por examen individual con tasas de aprobación
 
+### 12. Sistema de Notificaciones Completo
+- Panel desplegable en el header con todas las notificaciones
+- Badge con contador de no leídas (animado)
+- Marcado automático como leídas al abrir el panel
+- Notificaciones de: exámenes asignados, calificados, bienvenida, cursos completados
+
+### 13. Búsqueda Global en Tiempo Real
+- Búsqueda con debounce (300ms) en el header
+- Resultados agrupados por tipo: Cursos, Posts, Miembros
+- Navegación directa desde los resultados
+- Compatible con desktop y mobile
+
+### 14. Perfil de Usuario Mejorado
+- Edición completa del perfil: nombre, bio, avatar
+- Selector visual de avatares (18 opciones)
+- Banner decorativo con gradiente
+- Estadísticas personales: puntos, cursos, completados, logros
+- Sistema de Logros/Achievements con 10 posibles logros
+- Certificados de finalización de cursos (modal decorativo)
+
+### 15. Panel de Exámenes para Alumnos
+- Nueva sección "Mis Exámenes" en la navegación
+- Vista de exámenes pendientes, en revisión y aprobados
+- Interfaz completa para tomar exámenes:
+  - Preguntas de opción múltiple, verdadero/falso, completar, respuesta corta
+  - Indicadores visuales de progreso
+  - Validación antes de enviar
+- Resultados detallados con explicaciones
+- Conteo de intentos y límites
+
+### 16. Calendario Mejorado
+- Navegación entre meses (botones anterior/siguiente)
+- Botón "Hoy" para volver al mes actual
+- Indicadores visuales de eventos por día (coloreados por tipo)
+- Botón "Crear Evento" para maestros
+- Modal de creación con campos: título, descripción, fecha, hora, tipo
+- Eventos futuros ordenados cronológicamente
+
 ## 🔌 API Endpoints
 
 ### Autenticación
@@ -335,7 +373,8 @@ En la pantalla de bienvenida puedes ingresar con cuentas demo para probar:
 3. **Integración OpenAI** para guías IA avanzados
 4. **Sistema de pagos** con Stripe
 5. **WebRTC** para videollamadas grupales
-6. **Notificaciones push** para eventos y actualizaciones
+6. **Mensajería privada** entre maestros y alumnos
+7. **Sistema de reportes** para maestros (métricas de rendimiento)
 
 ## 📄 Licencia
 
