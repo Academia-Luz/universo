@@ -46,7 +46,27 @@ const state = {
     editingCourse: null,
     // Enroll student modal
     showEnrollStudent: false,
-    enrollingCourse: null
+    enrollingCourse: null,
+    // Notification panel
+    showNotifications: false,
+    // Search panel
+    showSearchPanel: false,
+    searchDebounce: null,
+    // Calendar navigation
+    calendarMonth: new Date().getMonth(),
+    calendarYear: new Date().getFullYear(),
+    showCreateEvent: false,
+    // Student exam panel
+    studentExams: [],
+    takingExam: null,
+    examAnswers: [],
+    examResults: null,
+    // Profile editing
+    editingProfile: false,
+    // Certificate modal
+    showCertificate: null,
+    // Achievements
+    achievements: []
 };
 
 // Utilities
@@ -119,6 +139,8 @@ async function fetchData() {
         state.notifications = await api(`/notifications/${state.user.id}`) || [];
         if (state.user.role === 'teacher') {
             state.myStudents = await api(`/teacher/${state.user.id}/students`) || [];
+        } else {
+            state.studentExams = await api(`/student/${state.user.id}/exams`) || [];
         }
     }
     
@@ -383,15 +405,213 @@ function scrollChat() {
 
 // Search
 async function search() {
-    const query = $('searchInput')?.value?.trim();
+    const query = $('searchInput')?.value?.trim() || $('searchInputPanel')?.value?.trim();
     if (!query) {
         state.searchResults = null;
+        state.showSearchPanel = false;
         render();
         return;
     }
     
     state.searchResults = await api(`/search?q=${encodeURIComponent(query)}`);
+    state.showSearchPanel = true;
     render();
+}
+
+function debounceSearch() {
+    clearTimeout(state.searchDebounce);
+    state.searchDebounce = setTimeout(search, 300);
+}
+
+function closeSearch() {
+    state.showSearchPanel = false;
+    state.searchResults = null;
+    render();
+}
+
+// Notifications
+function toggleNotifications() {
+    state.showNotifications = !state.showNotifications;
+    state.showProfileMenu = false;
+    if (state.showNotifications && state.user) {
+        markNotificationsRead();
+    }
+    render();
+}
+
+async function markNotificationsRead() {
+    if (!state.user) return;
+    await api(`/notifications/${state.user.id}/read`, { method: 'POST' });
+    state.notifications.forEach(n => n.read = true);
+}
+
+// Calendar Navigation
+function prevMonth() {
+    state.calendarMonth--;
+    if (state.calendarMonth < 0) {
+        state.calendarMonth = 11;
+        state.calendarYear--;
+    }
+    render();
+}
+
+function nextMonth() {
+    state.calendarMonth++;
+    if (state.calendarMonth > 11) {
+        state.calendarMonth = 0;
+        state.calendarYear++;
+    }
+    render();
+}
+
+function goToToday() {
+    state.calendarMonth = new Date().getMonth();
+    state.calendarYear = new Date().getFullYear();
+    render();
+}
+
+async function createEvent() {
+    const title = $('eventTitle')?.value?.trim();
+    const description = $('eventDescription')?.value?.trim();
+    const date = $('eventDate')?.value;
+    const time = $('eventTime')?.value;
+    const type = $('eventType')?.value;
+    
+    if (!title || !date || !time) {
+        showToast('Completa el titulo, fecha y hora', 'error');
+        return;
+    }
+    
+    const result = await api('/events', {
+        method: 'POST',
+        body: { title, description, date, time, type, creatorId: state.user.id }
+    });
+    
+    if (result?.success) {
+        state.events.push(result.event);
+        state.showCreateEvent = false;
+        showToast('Evento creado exitosamente');
+        render();
+    } else {
+        showToast(result?.error || 'Error al crear evento', 'error');
+    }
+}
+
+// Student Exams
+async function fetchStudentExams() {
+    if (!state.user || state.user.role === 'teacher') return;
+    state.studentExams = await api(`/student/${state.user.id}/exams`) || [];
+}
+
+async function takeExam(examId) {
+    const result = await api(`/student/${state.user.id}/exams/${examId}/take`);
+    if (result && !result.error) {
+        state.takingExam = result;
+        state.examAnswers = new Array(result.questions.length).fill(null);
+        state.examResults = null;
+        render();
+    } else {
+        showToast(result?.error || 'Error al cargar examen', 'error');
+    }
+}
+
+function setExamAnswer(index, value) {
+    state.examAnswers[index] = value;
+    render();
+}
+
+async function submitExam() {
+    if (!state.takingExam) return;
+    const unanswered = state.examAnswers.filter(a => a === null || a === undefined || a === '').length;
+    if (unanswered > 0 && !confirm(`Tienes ${unanswered} preguntas sin responder. ¿Deseas enviar?`)) return;
+    
+    showToast('Enviando respuestas...', 'info');
+    const result = await api(`/student/${state.user.id}/exams/${state.takingExam.id}/submit`, {
+        method: 'POST',
+        body: {
+            answers: state.examAnswers,
+            startedAt: new Date().toISOString(),
+            completedAt: new Date().toISOString()
+        }
+    });
+    
+    if (result?.success) {
+        state.examResults = result;
+        state.takingExam = null;
+        await fetchStudentExams();
+        showToast(result.feedback || 'Examen enviado');
+        render();
+    } else {
+        showToast(result?.error || 'Error al enviar', 'error');
+    }
+}
+
+function cancelExam() {
+    if (!confirm('Si cancelas perderás tus respuestas. ¿Continuar?')) return;
+    state.takingExam = null;
+    state.examAnswers = [];
+    render();
+}
+
+// Profile editing
+async function saveProfile() {
+    const name = $('profileName')?.value?.trim();
+    const bio = $('profileBio')?.value?.trim();
+    const avatar = $('profileAvatar')?.value || state.user.avatar;
+    
+    if (!name) { showToast('El nombre es requerido', 'error'); return; }
+    
+    const result = await api(`/members/${state.user.id}`, {
+        method: 'PUT',
+        body: { name, bio, avatar }
+    });
+    
+    if (result?.success) {
+        state.user = { ...state.user, name, bio, avatar };
+        saveUser();
+        state.editingProfile = false;
+        showToast('Perfil actualizado');
+        render();
+    }
+}
+
+function selectAvatar(emoji) {
+    if ($('profileAvatar')) $('profileAvatar').value = emoji;
+    render();
+}
+
+// Achievements helper
+function getUserAchievements() {
+    const achievements = [];
+    const u = state.user;
+    if (!u) return achievements;
+    
+    // Post-based
+    const myPosts = state.posts.filter(p => p.authorId === u.id);
+    if (myPosts.length >= 1) achievements.push({ icon: '💬', name: 'Primera Voz', desc: 'Publicaste tu primer post' });
+    if (myPosts.length >= 5) achievements.push({ icon: '📢', name: 'Comunicador', desc: '5 posts publicados' });
+    
+    // Course-based
+    const enrolled = state.courses.filter(c => c.enrolled);
+    if (enrolled.length >= 1) achievements.push({ icon: '📚', name: 'Buscador', desc: 'Te inscribiste en un curso' });
+    if (enrolled.length >= 3) achievements.push({ icon: '🎓', name: 'Estudioso', desc: '3 cursos en progreso' });
+    
+    // Completion-based
+    const completed = enrolled.filter(c => c.progress === 100);
+    if (completed.length >= 1) achievements.push({ icon: '🏆', name: 'Graduado', desc: 'Completaste un curso' });
+    
+    // Level-based
+    if ((u.level || 1) >= 3) achievements.push({ icon: '⭐', name: 'Aprendiz', desc: 'Alcanzaste nivel 3' });
+    if ((u.level || 1) >= 5) achievements.push({ icon: '🌟', name: 'Iluminado', desc: 'Alcanzaste nivel 5' });
+    
+    // Points-based
+    if ((u.points || 0) >= 100) achievements.push({ icon: '✨', name: 'Centenario', desc: '100 puntos de luz' });
+    if ((u.points || 0) >= 500) achievements.push({ icon: '💎', name: 'Diamante', desc: '500 puntos de luz' });
+    
+    // Always give first achievement
+    achievements.unshift({ icon: '🌱', name: 'Semilla de Luz', desc: 'Te uniste a la Academia' });
+    
+    return achievements;
 }
 
 // ============================================================
@@ -400,6 +620,13 @@ async function search() {
 
 function setTeacherTab(tab) {
     state.teacherTab = tab;
+    state.selectedExamSubmissions = null; // Reset when changing tabs
+    
+    // Load exams when switching to exams tab
+    if (tab === 'exams' && state.teacherExams.length === 0 && state.user?.role === 'teacher') {
+        fetchTeacherExams().then(render);
+    }
+    
     render();
 }
 
@@ -961,7 +1188,13 @@ function renderHeader() {
     
     const navItems = isTeacher 
         ? ['comunidad', 'cursos', 'mi-escuela', 'calendario', 'miembros']
-        : ['comunidad', 'cursos', 'calendario', 'miembros', 'leaderboard'];
+        : ['comunidad', 'cursos', 'mis-examenes', 'calendario', 'miembros', 'leaderboard'];
+    
+    const navLabels = {
+        'comunidad': 'Comunidad', 'cursos': 'Cursos', 'mi-escuela': '🎓 Mi Escuela',
+        'calendario': 'Calendario', 'miembros': 'Miembros', 'leaderboard': 'Ranking',
+        'mis-examenes': '📝 Exámenes'
+    };
     
     return `<header class="sticky top-0 z-40 bg-[#0f0a1e]/95 backdrop-blur-md border-b border-purple-900/30">
         <div class="max-w-7xl mx-auto px-4">
@@ -971,47 +1204,69 @@ function renderHeader() {
                     <span class="font-cinzel text-lg text-white hidden sm:block">Academia de Luz</span>
                 </div>
 
-                <nav class="hidden md:flex items-center gap-6">
+                <nav class="hidden md:flex items-center gap-5">
                     ${navItems.map(s => `
                         <button onclick="setSection('${s}')" class="nav-item text-sm ${state.section === s ? 'active text-white' : 'text-purple-400 hover:text-white'}">
-                            ${s === 'mi-escuela' ? '🎓 Mi Escuela' : s.charAt(0).toUpperCase() + s.slice(1)}
+                            ${navLabels[s] || s.charAt(0).toUpperCase() + s.slice(1)}
                         </button>
                     `).join('')}
                 </nav>
 
-                <div class="flex items-center gap-4">
-                    <div class="hidden lg:flex items-center bg-purple-900/30 rounded-lg px-3 py-2">
-                        <i class="fas fa-search text-purple-500 text-sm mr-2"></i>
-                        <input type="text" id="searchInput" placeholder="Buscar..." class="bg-transparent text-sm text-white placeholder-purple-500 focus:outline-none w-32" onkeyup="if(event.key==='Enter')search()">
+                <div class="flex items-center gap-3">
+                    <!-- Search -->
+                    <div class="relative">
+                        <div class="hidden lg:flex items-center bg-purple-900/30 rounded-lg px-3 py-2">
+                            <i class="fas fa-search text-purple-500 text-sm mr-2"></i>
+                            <input type="text" id="searchInput" placeholder="Buscar..." class="bg-transparent text-sm text-white placeholder-purple-500 focus:outline-none w-40" oninput="debounceSearch()" onkeyup="if(event.key==='Enter')search()" onfocus="if(this.value)search()">
+                        </div>
+                        <button onclick="state.showSearchPanel=!state.showSearchPanel;render()" class="lg:hidden text-purple-400 hover:text-white">
+                            <i class="fas fa-search"></i>
+                        </button>
+                        ${renderSearchDropdown()}
                     </div>
                     
-                    <button class="relative text-purple-400 hover:text-white">
-                        <i class="fas fa-bell"></i>
-                        ${unreadNotifications > 0 ? `<span class="absolute -top-1 -right-1 w-4 h-4 bg-pink-500 rounded-full text-[10px] flex items-center justify-center">${unreadNotifications}</span>` : ''}
-                    </button>
+                    <!-- Notifications -->
+                    <div class="relative">
+                        <button onclick="toggleNotifications()" class="relative text-purple-400 hover:text-white transition-colors">
+                            <i class="fas fa-bell text-lg"></i>
+                            ${unreadNotifications > 0 ? `<span class="absolute -top-1.5 -right-1.5 w-5 h-5 bg-pink-500 rounded-full text-[10px] font-bold flex items-center justify-center animate-pulse">${unreadNotifications > 9 ? '9+' : unreadNotifications}</span>` : ''}
+                        </button>
+                        ${renderNotificationPanel()}
+                    </div>
                     
-                    <button onclick="toggleChat()" class="relative text-purple-400 hover:text-white">
-                        <i class="fas fa-comment-dots"></i>
+                    <!-- Chat -->
+                    <button onclick="toggleChat()" class="relative text-purple-400 hover:text-white transition-colors">
+                        <i class="fas fa-comment-dots text-lg"></i>
                         <span class="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full text-[10px] flex items-center justify-center">✨</span>
                     </button>
 
+                    <!-- Profile -->
                     <div class="relative">
-                        <div class="avatar-ring w-9 h-9 cursor-pointer" onclick="state.showProfileMenu=!state.showProfileMenu;render()">
+                        <div class="avatar-ring w-9 h-9 cursor-pointer" onclick="state.showProfileMenu=!state.showProfileMenu;state.showNotifications=false;render()">
                             <div class="w-full h-full rounded-full bg-gradient-to-br from-purple-700 to-pink-700 flex items-center justify-center text-lg">${state.user?.avatar || '🙏'}</div>
                         </div>
                         ${state.showProfileMenu ? `
-                            <div class="absolute right-0 top-12 w-48 gradient-border z-50 fade-in">
+                            <div class="absolute right-0 top-12 w-56 gradient-border z-50 fade-in">
                                 <div class="gradient-border-inner py-2">
-                                    <div class="px-4 py-2 border-b border-purple-800/50">
+                                    <div class="px-4 py-3 border-b border-purple-800/50">
                                         <p class="text-white font-medium truncate">${state.user?.name}</p>
-                                        <p class="text-purple-400 text-xs">${state.user?.role === 'teacher' ? 'Maestro' : 'Alumno'} • Nivel ${state.user?.level || 1}</p>
+                                        <p class="text-purple-400 text-xs">${state.user?.role === 'teacher' ? '✨ Maestro' : '🙏 Alumno'} • Nivel ${state.user?.level || 1}</p>
+                                        <div class="mt-2 h-1 bg-purple-900 rounded-full overflow-hidden">
+                                            <div class="h-full bg-gradient-to-r from-purple-500 to-pink-500" style="width: ${Math.min(100, ((state.user?.points || 0) % 100))}%"></div>
+                                        </div>
+                                        <p class="text-purple-500 text-[10px] mt-1">${state.user?.points || 0} puntos de luz</p>
                                     </div>
-                                    <button class="w-full px-4 py-2 text-left text-purple-300 hover:bg-purple-800/30 text-sm" onclick="setSection('perfil');state.showProfileMenu=false">
-                                        <i class="fas fa-user mr-2"></i> Mi Perfil
+                                    <button class="w-full px-4 py-2.5 text-left text-purple-300 hover:bg-purple-800/30 text-sm flex items-center gap-2" onclick="setSection('perfil');state.showProfileMenu=false">
+                                        <i class="fas fa-user w-5"></i> Mi Perfil
                                     </button>
-                                    <button class="w-full px-4 py-2 text-left text-red-400 hover:bg-purple-800/30 text-sm" onclick="logout()">
-                                        <i class="fas fa-sign-out-alt mr-2"></i> Cerrar Sesión
-                                    </button>
+                                    ${state.user?.role !== 'teacher' ? `<button class="w-full px-4 py-2.5 text-left text-purple-300 hover:bg-purple-800/30 text-sm flex items-center gap-2" onclick="setSection('mis-examenes');state.showProfileMenu=false">
+                                        <i class="fas fa-file-alt w-5"></i> Mis Exámenes
+                                    </button>` : ''}
+                                    <div class="border-t border-purple-800/50 mt-1 pt-1">
+                                        <button class="w-full px-4 py-2.5 text-left text-red-400 hover:bg-purple-800/30 text-sm flex items-center gap-2" onclick="logout()">
+                                            <i class="fas fa-sign-out-alt w-5"></i> Cerrar Sesión
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         ` : ''}
@@ -1020,6 +1275,80 @@ function renderHeader() {
             </div>
         </div>
     </header>`;
+}
+
+function renderNotificationPanel() {
+    if (!state.showNotifications) return '';
+    const notifications = state.notifications.slice(0, 15);
+    
+    return `<div class="absolute right-0 top-12 w-80 gradient-border z-50 fade-in">
+        <div class="gradient-border-inner max-h-96 overflow-y-auto">
+            <div class="p-3 border-b border-purple-800/50 flex items-center justify-between">
+                <h4 class="text-white font-semibold text-sm">🔔 Notificaciones</h4>
+                <button onclick="state.showNotifications=false;render()" class="text-purple-500 hover:text-white text-xs"><i class="fas fa-times"></i></button>
+            </div>
+            ${notifications.length === 0 ? `
+                <div class="p-6 text-center">
+                    <div class="text-3xl mb-2">🔮</div>
+                    <p class="text-purple-500 text-sm">No hay notificaciones</p>
+                </div>
+            ` : notifications.map(n => `
+                <div class="px-4 py-3 border-b border-purple-800/20 hover:bg-purple-900/30 transition-colors cursor-pointer ${!n.read ? 'bg-purple-900/20' : ''}">
+                    <p class="text-sm text-white">${n.message}</p>
+                    <p class="text-[10px] text-purple-600 mt-1">${new Date(n.createdAt).toLocaleDateString('es', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</p>
+                </div>
+            `).join('')}
+        </div>
+    </div>`;
+}
+
+function renderSearchDropdown() {
+    if (!state.searchResults || !state.showSearchPanel) return '';
+    const { posts = [], courses = [], members = [] } = state.searchResults;
+    const hasResults = posts.length > 0 || courses.length > 0 || members.length > 0;
+    
+    return `<div class="absolute right-0 lg:left-0 top-12 w-80 gradient-border z-50 fade-in">
+        <div class="gradient-border-inner max-h-96 overflow-y-auto">
+            <div class="p-3 border-b border-purple-800/50 flex items-center justify-between">
+                <h4 class="text-white font-semibold text-sm">🔍 Resultados</h4>
+                <button onclick="closeSearch()" class="text-purple-500 hover:text-white text-xs"><i class="fas fa-times"></i></button>
+            </div>
+            ${!hasResults ? `<div class="p-6 text-center"><p class="text-purple-500 text-sm">Sin resultados</p></div>` : ''}
+            ${courses.length > 0 ? `
+                <div class="px-3 py-2"><p class="text-purple-500 text-xs font-semibold uppercase">Cursos</p></div>
+                ${courses.map(c => `
+                    <button onclick="viewCourse('${c.id}');setSection('cursos');closeSearch()" class="w-full px-4 py-2 text-left hover:bg-purple-900/30 flex items-center gap-3">
+                        <i class="fas fa-book text-purple-400"></i>
+                        <div>
+                            <p class="text-white text-sm truncate">${c.title}</p>
+                            <p class="text-purple-500 text-xs">${c.category}</p>
+                        </div>
+                    </button>
+                `).join('')}
+            ` : ''}
+            ${posts.length > 0 ? `
+                <div class="px-3 py-2 border-t border-purple-800/20"><p class="text-purple-500 text-xs font-semibold uppercase">Posts</p></div>
+                ${posts.map(p => `
+                    <div class="px-4 py-2 hover:bg-purple-900/30">
+                        <p class="text-white text-sm truncate">${p.title}</p>
+                        <p class="text-purple-500 text-xs">${p.author?.name || 'Anónimo'}</p>
+                    </div>
+                `).join('')}
+            ` : ''}
+            ${members.length > 0 ? `
+                <div class="px-3 py-2 border-t border-purple-800/20"><p class="text-purple-500 text-xs font-semibold uppercase">Miembros</p></div>
+                ${members.map(m => `
+                    <div class="px-4 py-2 hover:bg-purple-900/30 flex items-center gap-3">
+                        <span class="text-xl">${m.avatar}</span>
+                        <div>
+                            <p class="text-white text-sm">${m.name}</p>
+                            <p class="text-purple-500 text-xs">${m.role === 'teacher' ? 'Maestro' : 'Alumno'}</p>
+                        </div>
+                    </div>
+                `).join('')}
+            ` : ''}
+        </div>
+    </div>`;
 }
 
 function renderMobileNav() {
@@ -1033,8 +1362,8 @@ function renderMobileNav() {
     ] : [
         { id: 'comunidad', icon: 'fa-comments', label: 'Comunidad' },
         { id: 'cursos', icon: 'fa-book', label: 'Cursos' },
+        { id: 'mis-examenes', icon: 'fa-file-alt', label: 'Exámenes' },
         { id: 'calendario', icon: 'fa-calendar', label: 'Calendario' },
-        { id: 'miembros', icon: 'fa-users', label: 'Miembros' },
         { id: 'leaderboard', icon: 'fa-trophy', label: 'Ranking' }
     ];
     
@@ -1489,11 +1818,13 @@ function renderLessonView() {
 
 function renderCalendar() {
     const today = new Date();
-    const year = today.getFullYear();
-    const month = today.getMonth();
+    const year = state.calendarYear;
+    const month = state.calendarMonth;
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     const firstDay = new Date(year, month, 1).getDay();
     const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    const isTeacher = state.user?.role === 'teacher';
+    const isCurrentMonth = year === today.getFullYear() && month === today.getMonth();
     
     let days = [];
     const startDay = firstDay === 0 ? 6 : firstDay - 1;
@@ -1501,26 +1832,43 @@ function renderCalendar() {
     for (let i = 1; i <= daysInMonth; i++) {
         const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
         const dayEvents = state.events.filter(e => e.date === dateStr);
-        days.push({ day: i, current: true, today: i === today.getDate(), events: dayEvents });
+        days.push({ day: i, current: true, today: isCurrentMonth && i === today.getDate(), events: dayEvents, dateStr });
     }
     
+    // Upcoming events (future only)
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+    const upcomingEvents = state.events.filter(e => e.date >= todayStr).sort((a,b) => a.date.localeCompare(b.date));
+    
     return `<div>
-        <div class="flex items-center justify-between mb-6">
-            <h1 class="font-cinzel text-2xl text-white">📅 ${monthNames[month]} ${year}</h1>
+        <div class="flex items-center justify-between mb-6 flex-wrap gap-3">
+            <div class="flex items-center gap-3">
+                <h1 class="font-cinzel text-2xl text-white">📅 Calendario</h1>
+            </div>
+            <div class="flex items-center gap-2">
+                <button onclick="prevMonth()" class="btn-secondary px-3 py-2 rounded-lg text-purple-300 hover:text-white"><i class="fas fa-chevron-left"></i></button>
+                <button onclick="goToToday()" class="btn-secondary px-4 py-2 rounded-lg text-sm text-purple-300 ${isCurrentMonth ? 'ring-1 ring-pink-500' : ''}">${monthNames[month]} ${year}</button>
+                <button onclick="nextMonth()" class="btn-secondary px-3 py-2 rounded-lg text-purple-300 hover:text-white"><i class="fas fa-chevron-right"></i></button>
+                ${isTeacher ? `<button onclick="state.showCreateEvent=true;render()" class="btn-spiritual px-4 py-2 rounded-lg text-sm ml-2"><i class="fas fa-plus mr-1"></i> Evento</button>` : ''}
+            </div>
         </div>
         
         <div class="gradient-border mb-6">
             <div class="gradient-border-inner p-4">
-                <div class="grid grid-cols-7 gap-2 mb-2">
-                    ${['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map(d => `<div class="text-center text-purple-500 text-sm py-2">${d}</div>`).join('')}
+                <div class="grid grid-cols-7 gap-1 mb-2">
+                    ${['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map(d => `<div class="text-center text-purple-500 text-xs font-semibold py-2">${d}</div>`).join('')}
                 </div>
-                <div class="grid grid-cols-7 gap-2">
+                <div class="grid grid-cols-7 gap-1">
                     ${days.map(d => `
-                        <div class="min-h-20 p-2 rounded-lg ${d.current ? 'bg-purple-900/30' : ''} ${d.today ? 'ring-2 ring-pink-500' : ''}">
-                            <div class="text-sm ${d.current ? d.today ? 'font-bold text-pink-400' : 'text-white' : 'text-purple-700'}">${d.day}</div>
-                            ${d.events?.slice(0, 2).map(e => `
-                                <div class="mt-1 text-xs bg-purple-800/50 text-purple-300 p-1 rounded truncate">${e.time?.slice(0, 5)} ${e.title?.slice(0, 10)}...</div>
-                            `).join('') || ''}
+                        <div class="min-h-16 md:min-h-20 p-1.5 rounded-lg ${d.current ? 'bg-purple-900/30 hover:bg-purple-900/50 transition-colors' : ''} ${d.today ? 'ring-2 ring-pink-500 bg-pink-900/20' : ''}">
+                            <div class="text-sm ${d.current ? d.today ? 'font-bold text-pink-400' : 'text-white' : 'text-transparent'}">${d.day}</div>
+                            ${d.events?.length > 0 ? `
+                                <div class="space-y-0.5 mt-0.5">
+                                    ${d.events.slice(0, 2).map(e => `
+                                        <div class="text-[10px] ${e.type === 'meditation' ? 'bg-purple-700/60 text-purple-200' : e.type === 'class' ? 'bg-amber-700/60 text-amber-200' : e.type === 'ceremony' ? 'bg-green-700/60 text-green-200' : 'bg-indigo-700/60 text-indigo-200'} px-1 py-0.5 rounded truncate">${e.title?.slice(0, 12)}</div>
+                                    `).join('')}
+                                    ${d.events.length > 2 ? `<div class="text-[10px] text-purple-500">+${d.events.length - 2} más</div>` : ''}
+                                </div>
+                            ` : ''}
                         </div>
                     `).join('')}
                 </div>
@@ -1528,24 +1876,38 @@ function renderCalendar() {
         </div>
 
         <h2 class="font-cinzel text-xl text-white mb-4">🔮 Próximos Eventos</h2>
-        <div class="space-y-3">
-            ${state.events.map(event => `
+        ${upcomingEvents.length === 0 ? `
+            <div class="gradient-border"><div class="gradient-border-inner p-8 text-center">
+                <div class="text-4xl mb-3">📅</div>
+                <p class="text-purple-400">No hay próximos eventos programados</p>
+            </div></div>
+        ` : `<div class="space-y-3">
+            ${upcomingEvents.map(event => {
+                const eventDate = new Date(event.date + 'T' + (event.time || '00:00'));
+                const isToday = event.date === todayStr;
+                const isPast = event.date < todayStr;
+                return `
                 <div class="gradient-border card-glow">
                     <div class="gradient-border-inner p-4 flex items-center gap-4">
-                        <div class="w-12 h-12 rounded-lg bg-purple-900/50 flex items-center justify-center text-2xl">
-                            ${event.type === 'meditation' ? '🧘' : event.type === 'class' ? '📚' : event.type === 'ceremony' ? '✨' : '🔮'}
+                        <div class="w-14 h-14 rounded-xl ${event.type === 'meditation' ? 'bg-purple-900/70' : event.type === 'class' ? 'bg-amber-900/70' : event.type === 'ceremony' ? 'bg-green-900/70' : 'bg-indigo-900/70'} flex flex-col items-center justify-center text-center flex-shrink-0">
+                            <span class="text-[10px] text-purple-400 uppercase">${monthNames[eventDate.getMonth()].slice(0,3)}</span>
+                            <span class="text-xl font-bold text-white">${eventDate.getDate()}</span>
                         </div>
-                        <div class="flex-1">
-                            <h4 class="text-white font-medium">${event.title}</h4>
-                            <p class="text-purple-400 text-sm">${event.date} • ${event.time}</p>
-                            <p class="text-purple-500 text-xs mt-1">${event.description || ''}</p>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2">
+                                <h4 class="text-white font-medium truncate">${event.title}</h4>
+                                ${isToday ? '<span class="text-[10px] bg-pink-500/30 text-pink-300 px-2 py-0.5 rounded-full">HOY</span>' : ''}
+                            </div>
+                            <p class="text-purple-400 text-sm"><i class="fas fa-clock mr-1 text-xs"></i>${event.time} • ${event.type === 'meditation' ? '🧘 Meditación' : event.type === 'class' ? '📚 Clase' : event.type === 'ceremony' ? '✨ Ceremonia' : '🔮 Taller'}</p>
+                            ${event.description ? `<p class="text-purple-500 text-xs mt-1 truncate">${event.description}</p>` : ''}
                         </div>
-                        <button onclick="joinEvent('${event.id}')" class="btn-spiritual px-4 py-2 rounded-lg text-sm">Unirse</button>
+                        <button onclick="joinEvent('${event.id}')" class="btn-spiritual px-4 py-2 rounded-lg text-sm flex-shrink-0">Unirse</button>
                     </div>
-                </div>
-            `).join('')}
-        </div>
-    </div>`;
+                </div>`;
+            }).join('')}
+        </div>`}
+    </div>
+    ${state.showCreateEvent ? renderCreateEventModal() : ''}`;
 }
 
 function renderMembers() {
@@ -1699,6 +2061,9 @@ function renderMySchool() {
             <button onclick="setTeacherTab('students')" class="tab-btn px-4 py-2 rounded-lg whitespace-nowrap ${state.teacherTab === 'students' ? 'active' : 'bg-purple-900/50 text-purple-300'}">
                 👥 Mis Alumnos
             </button>
+            <button onclick="setTeacherTab('exams')" class="tab-btn px-4 py-2 rounded-lg whitespace-nowrap ${state.teacherTab === 'exams' ? 'active' : 'bg-purple-900/50 text-purple-300'}">
+                📝 Exámenes
+            </button>
             <button onclick="setTeacherTab('stats')" class="tab-btn px-4 py-2 rounded-lg whitespace-nowrap ${state.teacherTab === 'stats' ? 'active' : 'bg-purple-900/50 text-purple-300'}">
                 📊 Estadísticas
             </button>
@@ -1706,12 +2071,15 @@ function renderMySchool() {
         
         ${state.teacherTab === 'courses' ? renderTeacherCourses() : ''}
         ${state.teacherTab === 'students' ? renderTeacherStudents() : ''}
+        ${state.teacherTab === 'exams' ? renderTeacherExams() : ''}
         ${state.teacherTab === 'stats' ? renderTeacherStats() : ''}
         
         ${state.showCreateCourse ? renderAICourseCreatorModal() : ''}
         ${state.showAddStudent ? renderAddStudentModal() : ''}
         ${state.showSuperAgent ? renderSuperAgentModal() : ''}
         ${state.showExamPreview ? renderExamPreviewModal() : ''}
+        ${state.showAssignExam ? renderAssignExamModal() : ''}
+        ${state.showGradeSubmission ? renderGradeSubmissionModal() : ''}
     </div>`;
 }
 
@@ -1863,31 +2231,117 @@ function renderTeacherStats() {
     const totalLessons = myCourses.reduce((acc, c) => acc + (c.lessons?.length || 0), 0);
     const totalEnrollments = myCourses.reduce((acc, c) => acc + (c.studentsCount || 0), 0);
     
-    return `<div class="grid md:grid-cols-4 gap-6">
-        <div class="gradient-border card-glow">
-            <div class="gradient-border-inner p-6 text-center">
-                <div class="text-4xl font-bold text-white mb-2">${myCourses.length}</div>
-                <p class="text-purple-400">Cursos Creados</p>
+    // Fetch exam stats if not loaded
+    if (!state.examStats && state.user?.role === 'teacher') {
+        fetchTeacherExams();
+    }
+    
+    const examOverview = state.examStats?.overview || { totalExams: 0, totalSubmissions: 0, totalPassed: 0, overallAverageScore: 0 };
+    
+    return `<div class="space-y-6">
+        <!-- Course Stats -->
+        <div class="grid md:grid-cols-4 gap-6">
+            <div class="gradient-border card-glow">
+                <div class="gradient-border-inner p-6 text-center">
+                    <div class="text-4xl font-bold text-white mb-2">${myCourses.length}</div>
+                    <p class="text-purple-400">Cursos Creados</p>
+                </div>
+            </div>
+            <div class="gradient-border card-glow">
+                <div class="gradient-border-inner p-6 text-center">
+                    <div class="text-4xl font-bold text-white mb-2">${totalLessons}</div>
+                    <p class="text-purple-400">Lecciones Totales</p>
+                </div>
+            </div>
+            <div class="gradient-border card-glow">
+                <div class="gradient-border-inner p-6 text-center">
+                    <div class="text-4xl font-bold text-white mb-2">${totalStudents}</div>
+                    <p class="text-purple-400">Alumnos Directos</p>
+                </div>
+            </div>
+            <div class="gradient-border card-glow">
+                <div class="gradient-border-inner p-6 text-center">
+                    <div class="text-4xl font-bold text-white mb-2">${totalEnrollments}</div>
+                    <p class="text-purple-400">Inscripciones</p>
+                </div>
             </div>
         </div>
-        <div class="gradient-border card-glow">
-            <div class="gradient-border-inner p-6 text-center">
-                <div class="text-4xl font-bold text-white mb-2">${totalLessons}</div>
-                <p class="text-purple-400">Lecciones Totales</p>
+        
+        <!-- Exam Stats -->
+        <h3 class="font-cinzel text-xl text-white">📝 Estadísticas de Exámenes</h3>
+        <div class="grid md:grid-cols-4 gap-6">
+            <div class="gradient-border card-glow">
+                <div class="gradient-border-inner p-6 text-center">
+                    <div class="text-4xl font-bold text-purple-400 mb-2">${examOverview.totalExams}</div>
+                    <p class="text-purple-400">Exámenes Creados</p>
+                </div>
+            </div>
+            <div class="gradient-border card-glow">
+                <div class="gradient-border-inner p-6 text-center">
+                    <div class="text-4xl font-bold text-blue-400 mb-2">${examOverview.totalSubmissions}</div>
+                    <p class="text-purple-400">Entregas Totales</p>
+                </div>
+            </div>
+            <div class="gradient-border card-glow">
+                <div class="gradient-border-inner p-6 text-center">
+                    <div class="text-4xl font-bold text-green-400 mb-2">${examOverview.totalPassed}</div>
+                    <p class="text-purple-400">Exámenes Aprobados</p>
+                </div>
+            </div>
+            <div class="gradient-border card-glow">
+                <div class="gradient-border-inner p-6 text-center">
+                    <div class="text-4xl font-bold text-amber-400 mb-2">${examOverview.overallAverageScore}%</div>
+                    <p class="text-purple-400">Promedio General</p>
+                </div>
             </div>
         </div>
-        <div class="gradient-border card-glow">
-            <div class="gradient-border-inner p-6 text-center">
-                <div class="text-4xl font-bold text-white mb-2">${totalStudents}</div>
-                <p class="text-purple-400">Alumnos Directos</p>
+        
+        ${state.examStats?.examStats?.length > 0 ? `
+            <!-- Individual Exam Performance -->
+            <h3 class="font-cinzel text-xl text-white">📊 Rendimiento por Examen</h3>
+            <div class="gradient-border">
+                <div class="gradient-border-inner overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="border-b border-purple-800/30">
+                            <tr class="text-purple-400">
+                                <th class="text-left p-4">Examen</th>
+                                <th class="text-center p-4">Asignados</th>
+                                <th class="text-center p-4">Entregas</th>
+                                <th class="text-center p-4">Aprobados</th>
+                                <th class="text-center p-4">Reprobados</th>
+                                <th class="text-center p-4">Promedio</th>
+                                <th class="text-center p-4">Tasa Aprobación</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${state.examStats.examStats.map(exam => `
+                                <tr class="border-b border-purple-800/20 hover:bg-purple-900/30">
+                                    <td class="p-4">
+                                        <p class="text-white font-medium">${exam.title}</p>
+                                        ${exam.isAssigned ? '<span class="text-xs text-green-400">Asignado</span>' : '<span class="text-xs text-amber-400">Sin asignar</span>'}
+                                    </td>
+                                    <td class="text-center p-4 text-purple-300">${exam.assignedTo}</td>
+                                    <td class="text-center p-4 text-purple-300">${exam.submissions}</td>
+                                    <td class="text-center p-4 text-green-400">${exam.passed}</td>
+                                    <td class="text-center p-4 text-red-400">${exam.failed}</td>
+                                    <td class="text-center p-4 text-white font-semibold">${exam.averageScore !== null ? exam.averageScore + '%' : '-'}</td>
+                                    <td class="text-center p-4">
+                                        ${exam.passRate !== null ? `
+                                            <div class="flex items-center justify-center gap-2">
+                                                <div class="w-16 h-2 bg-purple-900 rounded-full overflow-hidden">
+                                                    <div class="h-full ${exam.passRate >= 70 ? 'bg-green-500' : exam.passRate >= 50 ? 'bg-amber-500' : 'bg-red-500'}" style="width: ${exam.passRate}%"></div>
+                                                </div>
+                                                <span class="${exam.passRate >= 70 ? 'text-green-400' : exam.passRate >= 50 ? 'text-amber-400' : 'text-red-400'}">${exam.passRate}%</span>
+                                            </div>
+                                        ` : '-'}
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
             </div>
-        </div>
-        <div class="gradient-border card-glow">
-            <div class="gradient-border-inner p-6 text-center">
-                <div class="text-4xl font-bold text-white mb-2">${totalEnrollments}</div>
-                <p class="text-purple-400">Inscripciones</p>
-            </div>
-        </div>
+        ` : ''}
     </div>`;
 }
 
@@ -2123,54 +2577,146 @@ function renderProfile() {
     if (!state.user) return '<p class="text-center text-purple-400">Cargando...</p>';
     
     const enrolledCourses = state.courses.filter(c => c.enrolled);
+    const completedCourses = enrolledCourses.filter(c => c.progress === 100);
+    const achievements = getUserAchievements();
+    const avatarOptions = ['🙏', '🔮', '🦋', '👼', '💎', '🌈', '🌟', '⭐', '💫', '✨', '🧘', '🕯️', '🪷', '🦅', '🐉', '🌙', '☀️', '🌺'];
+    const levelNames = ['', 'Iniciado', 'Buscador', 'Aprendiz', 'Practicante', 'Iluminado', 'Sabio', 'Guardián', 'Maestro', 'Ascendido'];
+    const levelInfo = levelNames[state.user.level || 1] || 'Iniciado';
+    
+    if (state.editingProfile) {
+        return `<div class="max-w-2xl mx-auto">
+            <div class="gradient-border">
+                <div class="gradient-border-inner p-6">
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="font-cinzel text-xl text-white">✏️ Editar Perfil</h2>
+                        <button onclick="state.editingProfile=false;render()" class="text-purple-400 hover:text-white"><i class="fas fa-times"></i></button>
+                    </div>
+                    
+                    <div class="text-center mb-6">
+                        <div class="avatar-ring w-24 h-24 mx-auto mb-3">
+                            <div class="w-full h-full rounded-full bg-purple-700 flex items-center justify-center text-5xl" id="avatarPreview">${state.user.avatar}</div>
+                        </div>
+                        <input type="hidden" id="profileAvatar" value="${state.user.avatar}">
+                        <div class="flex flex-wrap gap-2 justify-center max-w-sm mx-auto">
+                            ${avatarOptions.map(e => `
+                                <button onclick="$('profileAvatar').value='${e}';$('avatarPreview').textContent='${e}'" class="w-10 h-10 rounded-lg ${e === state.user.avatar ? 'bg-purple-600 ring-2 ring-pink-500' : 'bg-purple-900/50 hover:bg-purple-800/50'} flex items-center justify-center text-xl transition-colors">${e}</button>
+                            `).join('')}
+                        </div>
+                    </div>
+                    
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-purple-300 text-sm mb-2">Nombre completo</label>
+                            <input type="text" id="profileName" value="${state.user.name}" class="w-full bg-purple-900/30 border border-purple-700/50 rounded-lg px-4 py-3 text-white focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-purple-300 text-sm mb-2">Biografía</label>
+                            <textarea id="profileBio" rows="3" class="w-full bg-purple-900/30 border border-purple-700/50 rounded-lg px-4 py-3 text-white focus:outline-none resize-none">${state.user.bio || ''}</textarea>
+                        </div>
+                    </div>
+                    
+                    <div class="flex gap-3 mt-6">
+                        <button onclick="state.editingProfile=false;render()" class="flex-1 btn-secondary py-3 rounded-xl">Cancelar</button>
+                        <button onclick="saveProfile()" class="flex-1 btn-spiritual py-3 rounded-xl font-semibold">Guardar Cambios</button>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+    }
     
     return `<div class="max-w-4xl mx-auto">
+        <!-- Profile Card -->
         <div class="gradient-border mb-6">
-            <div class="gradient-border-inner p-6">
-                <div class="flex items-start gap-6">
-                    <div class="avatar-ring w-24 h-24">
-                        <div class="w-full h-full rounded-full bg-purple-700 flex items-center justify-center text-5xl">${state.user.avatar}</div>
+            <div class="gradient-border-inner">
+                <div class="h-24 bg-gradient-to-r from-purple-800 via-pink-700 to-purple-800 rounded-t-xl relative">
+                    <button onclick="state.editingProfile=true;render()" class="absolute top-3 right-3 bg-black/30 hover:bg-black/50 px-3 py-1.5 rounded-lg text-white text-sm transition-colors">
+                        <i class="fas fa-edit mr-1"></i> Editar
+                    </button>
+                </div>
+                <div class="px-6 pb-6 -mt-10">
+                    <div class="flex items-end gap-4 mb-4">
+                        <div class="avatar-ring w-20 h-20 flex-shrink-0">
+                            <div class="w-full h-full rounded-full bg-purple-700 flex items-center justify-center text-4xl">${state.user.avatar}</div>
+                        </div>
+                        <div class="flex-1 pt-10">
+                            <h1 class="font-cinzel text-2xl text-white">${state.user.name}</h1>
+                            <p class="text-purple-400">${state.user.role === 'teacher' ? '✨ Maestro' : '🙏 Alumno'} • ${levelInfo} (Nivel ${state.user.level || 1})</p>
+                        </div>
                     </div>
-                    <div class="flex-1">
-                        <h1 class="font-cinzel text-2xl text-white mb-1">${state.user.name}</h1>
-                        <p class="text-purple-400 mb-2">${state.user.role === 'teacher' ? '✨ Maestro' : '🙏 Alumno'} • Nivel ${state.user.level || 1}</p>
-                        <p class="text-purple-300 text-sm mb-4">${state.user.bio || 'Sin biografía'}</p>
-                        <div class="flex gap-4 text-sm">
-                            <span class="text-purple-400"><strong class="text-white">${state.user.points || 50}</strong> puntos</span>
-                            <span class="text-purple-400"><strong class="text-white">${enrolledCourses.length}</strong> cursos</span>
+                    <p class="text-purple-300 text-sm mb-4">${state.user.bio || 'Sin biografía - haz clic en Editar para agregar una'}</p>
+                    
+                    <!-- Stats Cards -->
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div class="bg-purple-900/30 rounded-lg p-3 text-center">
+                            <div class="text-2xl font-bold text-white">${state.user.points || 0}</div>
+                            <div class="text-xs text-purple-500">Puntos de Luz</div>
+                        </div>
+                        <div class="bg-purple-900/30 rounded-lg p-3 text-center">
+                            <div class="text-2xl font-bold text-white">${enrolledCourses.length}</div>
+                            <div class="text-xs text-purple-500">Cursos</div>
+                        </div>
+                        <div class="bg-purple-900/30 rounded-lg p-3 text-center">
+                            <div class="text-2xl font-bold text-white">${completedCourses.length}</div>
+                            <div class="text-xs text-purple-500">Completados</div>
+                        </div>
+                        <div class="bg-purple-900/30 rounded-lg p-3 text-center">
+                            <div class="text-2xl font-bold text-white">${achievements.length}</div>
+                            <div class="text-xs text-purple-500">Logros</div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
         
+        <!-- Achievements -->
+        <h2 class="font-cinzel text-xl text-white mb-4">🏅 Logros</h2>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+            ${achievements.map(a => `
+                <div class="gradient-border card-glow">
+                    <div class="gradient-border-inner p-3 text-center">
+                        <div class="text-3xl mb-1">${a.icon}</div>
+                        <p class="text-white text-sm font-medium">${a.name}</p>
+                        <p class="text-purple-500 text-[10px]">${a.desc}</p>
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+        
+        <!-- My Courses -->
         <h2 class="font-cinzel text-xl text-white mb-4">📚 Mis Cursos</h2>
         ${enrolledCourses.length === 0 ? `
-            <div class="gradient-border">
+            <div class="gradient-border mb-6">
                 <div class="gradient-border-inner p-8 text-center">
+                    <div class="text-4xl mb-3">📖</div>
                     <p class="text-purple-400 mb-4">Aún no te has inscrito en ningún curso</p>
                     <button onclick="setSection('cursos')" class="btn-spiritual px-6 py-2 rounded-lg">Explorar Cursos</button>
                 </div>
             </div>
         ` : `
-            <div class="grid md:grid-cols-2 gap-4">
+            <div class="grid md:grid-cols-2 gap-4 mb-6">
                 ${enrolledCourses.map(course => `
                     <div class="gradient-border card-glow cursor-pointer" onclick="viewCourse('${course.id}')">
                         <div class="gradient-border-inner p-4 flex gap-4">
-                            <img src="${course.image}" alt="${course.title}" class="w-20 h-20 object-cover rounded-lg">
-                            <div class="flex-1">
-                                <h3 class="text-white font-medium mb-1">${course.title}</h3>
+                            <img src="${course.image}" alt="${course.title}" class="w-20 h-20 object-cover rounded-lg flex-shrink-0">
+                            <div class="flex-1 min-w-0">
+                                <h3 class="text-white font-medium mb-1 truncate">${course.title}</h3>
                                 <p class="text-purple-400 text-sm mb-2">${course.progress || 0}% completado</p>
-                                <div class="h-1 bg-purple-900 rounded-full overflow-hidden">
-                                    <div class="h-full bg-gradient-to-r from-purple-500 to-pink-500" style="width: ${course.progress || 0}%"></div>
+                                <div class="h-2 bg-purple-900 rounded-full overflow-hidden">
+                                    <div class="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all" style="width: ${course.progress || 0}%"></div>
                                 </div>
+                                ${course.progress === 100 ? `
+                                    <button onclick="event.stopPropagation();state.showCertificate='${course.id}';render()" class="mt-2 text-xs text-green-400 hover:text-green-300">
+                                        <i class="fas fa-certificate mr-1"></i> Ver Certificado
+                                    </button>
+                                ` : ''}
                             </div>
                         </div>
                     </div>
                 `).join('')}
             </div>
         `}
-    </div>`;
+    </div>
+    ${state.showCertificate ? renderCertificateModal() : ''}`;
 }
 
 function renderChatPanel() {
@@ -2253,6 +2799,7 @@ function renderMain() {
         case 'miembros': sectionContent = renderMembers(); break;
         case 'leaderboard': sectionContent = renderLeaderboard(); break;
         case 'perfil': sectionContent = renderProfile(); break;
+        case 'mis-examenes': sectionContent = renderStudentExams(); break;
         default: sectionContent = renderCommunity();
     }
     
@@ -2508,6 +3055,14 @@ state.showSuperAgent = false;
 state.showExamPreview = false;
 state.showPresentationPreview = false;
 state.examAnswers = {};
+// State for Teacher Exam Management
+state.teacherExams = [];
+state.selectedExamSubmissions = null;
+state.showAssignExam = false;
+state.assigningExam = null;
+state.showGradeSubmission = false;
+state.gradingSubmission = null;
+state.examStats = null;
 
 // Toggle Super Agent modal
 function toggleSuperAgent() {
@@ -2608,6 +3163,8 @@ async function generateProfessionalExam() {
     
     if (result?.success) {
         state.generatedExam = result.exam;
+        // Reload teacher exams list
+        await fetchTeacherExams();
         showToast(`¡Examen generado con ${result.exam.questions.length} preguntas! 📝`, 'success');
         render();
     } else {
@@ -3202,6 +3759,580 @@ function addExamToCourse() {
     // This would open a course selection modal
 }
 
+// ============================================================
+// TEACHER EXAM MANAGEMENT FUNCTIONS
+// ============================================================
+
+// Fetch teacher exams
+async function fetchTeacherExams() {
+    if (!state.user || state.user.role !== 'teacher') return;
+    
+    const [exams, stats] = await Promise.all([
+        api(`/teacher/${state.user.id}/exams`),
+        api(`/teacher/${state.user.id}/exam-stats`)
+    ]);
+    
+    state.teacherExams = exams || [];
+    state.examStats = stats || null;
+}
+
+// Render Teacher Exams Tab
+function renderTeacherExams() {
+    if (!state.teacherExams.length && !state.loading) {
+        fetchTeacherExams().then(render);
+    }
+    
+    return `<div>
+        <div class="flex justify-between items-center mb-4 flex-wrap gap-4">
+            <div class="text-purple-400 text-sm">
+                <i class="fas fa-file-alt mr-1"></i> ${state.teacherExams.length} exámenes creados
+            </div>
+            <button onclick="toggleSuperAgent();setSuperAgentTab('exams')" class="btn-spiritual px-4 py-2 rounded-lg text-sm">
+                <i class="fas fa-plus mr-2"></i> Crear Nuevo Examen
+            </button>
+        </div>
+        
+        ${state.selectedExamSubmissions ? renderExamSubmissions() : renderExamsList()}
+    </div>`;
+}
+
+// Render list of exams
+function renderExamsList() {
+    if (state.teacherExams.length === 0) {
+        return `<div class="gradient-border">
+            <div class="gradient-border-inner p-8 text-center">
+                <div class="text-6xl mb-4">📝</div>
+                <p class="text-purple-400 mb-4">Aún no has creado ningún examen</p>
+                <button onclick="toggleSuperAgent();setSuperAgentTab('exams')" class="btn-spiritual px-6 py-2 rounded-lg">
+                    <i class="fas fa-magic mr-2"></i> Crear mi primer examen
+                </button>
+            </div>
+        </div>`;
+    }
+    
+    return `<div class="space-y-4">
+        ${state.teacherExams.map(exam => `
+            <div class="gradient-border card-glow">
+                <div class="gradient-border-inner p-4">
+                    <div class="flex items-start justify-between gap-4">
+                        <div class="flex-1">
+                            <div class="flex items-center gap-3 mb-2">
+                                <h4 class="text-white font-semibold">${exam.title}</h4>
+                                ${exam.isAssigned 
+                                    ? `<span class="text-xs bg-green-900/50 text-green-400 px-2 py-0.5 rounded-full">✓ Asignado</span>`
+                                    : `<span class="text-xs bg-amber-900/50 text-amber-400 px-2 py-0.5 rounded-full">Sin asignar</span>`
+                                }
+                            </div>
+                            <p class="text-purple-400 text-sm mb-3 line-clamp-2">${exam.description}</p>
+                            
+                            <div class="flex items-center gap-4 text-xs text-purple-500 flex-wrap">
+                                <span><i class="fas fa-question-circle mr-1"></i> ${exam.questions?.length || 0} preguntas</span>
+                                <span><i class="fas fa-star mr-1"></i> ${exam.totalPoints} pts</span>
+                                <span><i class="fas fa-clock mr-1"></i> ${exam.timeLimit} min</span>
+                                <span><i class="fas fa-check-circle mr-1"></i> ${exam.passingScore}% para aprobar</span>
+                            </div>
+                            
+                            ${exam.isAssigned ? `
+                                <div class="mt-3 pt-3 border-t border-purple-800/30">
+                                    <div class="grid grid-cols-4 gap-2 text-center text-xs">
+                                        <div class="bg-purple-900/30 rounded-lg p-2">
+                                            <p class="text-lg font-bold text-white">${exam.submissionsCount}</p>
+                                            <p class="text-purple-500">Entregas</p>
+                                        </div>
+                                        <div class="bg-purple-900/30 rounded-lg p-2">
+                                            <p class="text-lg font-bold text-green-400">${exam.gradedCount}</p>
+                                            <p class="text-purple-500">Calificados</p>
+                                        </div>
+                                        <div class="bg-purple-900/30 rounded-lg p-2">
+                                            <p class="text-lg font-bold text-amber-400">${exam.pendingCount}</p>
+                                            <p class="text-purple-500">Pendientes</p>
+                                        </div>
+                                        <div class="bg-purple-900/30 rounded-lg p-2">
+                                            <p class="text-lg font-bold text-purple-300">${exam.averageScore !== null ? exam.averageScore + '%' : '-'}</p>
+                                            <p class="text-purple-500">Promedio</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            ` : ''}
+                        </div>
+                        
+                        <div class="flex flex-col gap-2">
+                            ${exam.isAssigned ? `
+                                <button onclick="viewExamSubmissions('${exam.id}')" class="btn-spiritual px-4 py-2 rounded-lg text-sm whitespace-nowrap">
+                                    <i class="fas fa-eye mr-1"></i> Ver entregas
+                                </button>
+                            ` : `
+                                <button onclick="openAssignExam('${exam.id}')" class="btn-spiritual px-4 py-2 rounded-lg text-sm whitespace-nowrap">
+                                    <i class="fas fa-paper-plane mr-1"></i> Asignar
+                                </button>
+                            `}
+                            <button onclick="deleteTeacherExam('${exam.id}')" class="btn-secondary px-4 py-2 rounded-lg text-sm text-red-400 hover:text-red-300 whitespace-nowrap">
+                                <i class="fas fa-trash mr-1"></i> Eliminar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `).join('')}
+    </div>`;
+}
+
+// View exam submissions
+async function viewExamSubmissions(examId) {
+    showToast('Cargando entregas...', 'info');
+    
+    const result = await api(`/teacher/${state.user.id}/exams/${examId}/submissions`);
+    
+    if (result) {
+        state.selectedExamSubmissions = result;
+        render();
+    } else {
+        showToast('Error al cargar las entregas', 'error');
+    }
+}
+
+// Render exam submissions view
+function renderExamSubmissions() {
+    const data = state.selectedExamSubmissions;
+    if (!data) return '';
+    
+    return `<div>
+        <button onclick="state.selectedExamSubmissions=null;render()" class="text-purple-400 hover:text-white mb-4 flex items-center gap-2">
+            <i class="fas fa-arrow-left"></i> Volver a la lista de exámenes
+        </button>
+        
+        <div class="gradient-border mb-6">
+            <div class="gradient-border-inner p-6">
+                <div class="flex items-start justify-between gap-4">
+                    <div>
+                        <h3 class="font-cinzel text-xl text-white mb-2">${data.exam.title}</h3>
+                        <p class="text-purple-400 text-sm">${data.exam.description}</p>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-white font-bold text-2xl">${data.stats.totalSubmitted}/${data.stats.totalAssigned}</p>
+                        <p class="text-purple-400 text-sm">entregas recibidas</p>
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-5 gap-4 mt-6">
+                    <div class="bg-purple-900/30 rounded-lg p-4 text-center">
+                        <p class="text-2xl font-bold text-white">${data.stats.totalAssigned}</p>
+                        <p class="text-purple-500 text-xs">Asignados</p>
+                    </div>
+                    <div class="bg-purple-900/30 rounded-lg p-4 text-center">
+                        <p class="text-2xl font-bold text-blue-400">${data.stats.totalSubmitted}</p>
+                        <p class="text-purple-500 text-xs">Entregas</p>
+                    </div>
+                    <div class="bg-purple-900/30 rounded-lg p-4 text-center">
+                        <p class="text-2xl font-bold text-green-400">${data.stats.passedCount}</p>
+                        <p class="text-purple-500 text-xs">Aprobados</p>
+                    </div>
+                    <div class="bg-purple-900/30 rounded-lg p-4 text-center">
+                        <p class="text-2xl font-bold text-red-400">${data.stats.failedCount}</p>
+                        <p class="text-purple-500 text-xs">Reprobados</p>
+                    </div>
+                    <div class="bg-purple-900/30 rounded-lg p-4 text-center">
+                        <p class="text-2xl font-bold text-purple-300">${data.stats.averageScore}%</p>
+                        <p class="text-purple-500 text-xs">Promedio</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Pending grading alert -->
+        ${data.stats.totalPending > 0 ? `
+            <div class="gradient-border mb-6">
+                <div class="gradient-border-inner p-4 flex items-center gap-4 bg-amber-900/20">
+                    <div class="text-3xl">⚠️</div>
+                    <div class="flex-1">
+                        <p class="text-amber-400 font-semibold">${data.stats.totalPending} entrega(s) pendiente(s) de calificar</p>
+                        <p class="text-purple-400 text-sm">Algunas preguntas requieren revisión manual.</p>
+                    </div>
+                </div>
+            </div>
+        ` : ''}
+        
+        <!-- Submissions List -->
+        <h4 class="text-white font-semibold mb-4">📋 Entregas Recibidas</h4>
+        ${data.submissions.length === 0 ? `
+            <div class="gradient-border">
+                <div class="gradient-border-inner p-8 text-center">
+                    <div class="text-5xl mb-4 opacity-50">📭</div>
+                    <p class="text-purple-400">Aún no hay entregas</p>
+                </div>
+            </div>
+        ` : `
+            <div class="space-y-3">
+                ${data.submissions.map(sub => `
+                    <div class="gradient-border card-glow">
+                        <div class="gradient-border-inner p-4">
+                            <div class="flex items-center justify-between gap-4">
+                                <div class="flex items-center gap-3 flex-1">
+                                    <div class="avatar-ring w-12 h-12">
+                                        <div class="w-full h-full rounded-full bg-purple-800 flex items-center justify-center text-2xl">${sub.student?.avatar || '🙏'}</div>
+                                    </div>
+                                    <div class="flex-1">
+                                        <h5 class="text-white font-medium">${sub.student?.name || 'Estudiante'}</h5>
+                                        <p class="text-purple-500 text-xs">${sub.student?.email || ''}</p>
+                                        <p class="text-purple-500 text-xs">Enviado: ${new Date(sub.submittedAt).toLocaleString()}</p>
+                                    </div>
+                                </div>
+                                
+                                <div class="text-center mx-4">
+                                    <p class="text-3xl font-bold ${sub.score?.passed ? 'text-green-400' : sub.score?.passed === false ? 'text-red-400' : 'text-amber-400'}">
+                                        ${sub.score?.percentage !== undefined ? sub.score.percentage + '%' : '?'}
+                                    </p>
+                                    <p class="text-xs ${sub.score?.passed ? 'text-green-500' : sub.score?.passed === false ? 'text-red-500' : 'text-amber-500'}">
+                                        ${sub.score?.passed === true ? '✅ Aprobado' : sub.score?.passed === false ? '❌ Reprobado' : '⏳ Pendiente'}
+                                    </p>
+                                    <p class="text-purple-500 text-xs">${sub.score?.earnedPoints || 0}/${data.exam.totalPoints} pts</p>
+                                </div>
+                                
+                                <div class="flex flex-col gap-2">
+                                    <button onclick="openGradeSubmission('${data.exam.id}', '${sub.id}')" class="btn-spiritual px-4 py-2 rounded-lg text-sm whitespace-nowrap">
+                                        <i class="fas ${sub.graded ? 'fa-eye' : 'fa-edit'} mr-1"></i> ${sub.graded ? 'Ver/Editar' : 'Calificar'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `}
+        
+        <!-- Pending Students -->
+        ${data.pendingStudents?.length > 0 ? `
+            <h4 class="text-white font-semibold mt-6 mb-4">⏳ Estudiantes que aún no han presentado</h4>
+            <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
+                ${data.pendingStudents.map(student => `
+                    <div class="gradient-border">
+                        <div class="gradient-border-inner p-3 flex items-center gap-3">
+                            <div class="avatar-ring w-10 h-10">
+                                <div class="w-full h-full rounded-full bg-purple-800 flex items-center justify-center text-lg">${student.avatar || '🙏'}</div>
+                            </div>
+                            <div>
+                                <p class="text-white text-sm">${student.name}</p>
+                                <p class="text-purple-500 text-xs">${student.email || ''}</p>
+                            </div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        ` : ''}
+    </div>`;
+}
+
+// Open assign exam modal
+function openAssignExam(examId) {
+    state.assigningExam = state.teacherExams.find(e => e.id === examId);
+    state.showAssignExam = true;
+    render();
+}
+
+// Assign exam to course/students
+async function assignExam() {
+    if (!state.assigningExam) return;
+    
+    const courseId = $('assignCourseId')?.value;
+    const maxAttempts = parseInt($('assignMaxAttempts')?.value) || 3;
+    const dueDateValue = $('assignDueDate')?.value;
+    const showResults = $('assignShowResults')?.checked !== false;
+    const allowRetake = $('assignAllowRetake')?.checked !== false;
+    
+    if (!courseId) {
+        showToast('Selecciona un curso', 'error');
+        return;
+    }
+    
+    showToast('Asignando examen...', 'info');
+    
+    const result = await api(`/teacher/${state.user.id}/exams/${state.assigningExam.id}/assign`, {
+        method: 'POST',
+        body: {
+            courseId,
+            dueDate: dueDateValue ? new Date(dueDateValue).toISOString() : null,
+            maxAttempts,
+            showResults,
+            allowRetake
+        }
+    });
+    
+    if (result?.success) {
+        state.showAssignExam = false;
+        state.assigningExam = null;
+        await fetchTeacherExams();
+        showToast(result.message, 'success');
+        render();
+    } else {
+        showToast(result?.error || 'Error al asignar examen', 'error');
+    }
+}
+
+// Render assign exam modal
+function renderAssignExamModal() {
+    if (!state.assigningExam) return '';
+    
+    const myCourses = state.courses.filter(c => c.teacherId === state.user.id);
+    
+    return `<div class="fixed inset-0 modal-overlay z-50 flex items-center justify-center p-4" onclick="if(event.target===this){state.showAssignExam=false;state.assigningExam=null;render()}">
+        <div class="gradient-border w-full max-w-lg slide-up">
+            <div class="gradient-border-inner p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="font-cinzel text-xl text-white">📝 Asignar Examen</h3>
+                    <button onclick="state.showAssignExam=false;state.assigningExam=null;render()" class="text-purple-400 hover:text-white"><i class="fas fa-times"></i></button>
+                </div>
+                
+                <div class="bg-purple-900/30 rounded-lg p-3 mb-4">
+                    <p class="text-white font-medium">${state.assigningExam.title}</p>
+                    <p class="text-purple-400 text-sm">${state.assigningExam.questions?.length || 0} preguntas • ${state.assigningExam.totalPoints} pts • ${state.assigningExam.timeLimit} min</p>
+                </div>
+                
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-purple-300 text-sm mb-2">Asignar a curso *</label>
+                        <select id="assignCourseId" class="w-full bg-purple-900/30 border border-purple-700/50 rounded-lg px-4 py-3 text-white focus:outline-none">
+                            <option value="">-- Seleccionar curso --</option>
+                            ${myCourses.map(c => `
+                                <option value="${c.id}">${c.title} (${c.studentsCount || 0} estudiantes)</option>
+                            `).join('')}
+                        </select>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-purple-300 text-xs mb-1">Intentos máximos</label>
+                            <input type="number" id="assignMaxAttempts" value="3" min="1" max="10" class="w-full bg-purple-900/30 border border-purple-700/50 rounded-lg px-3 py-2 text-white text-sm focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-purple-300 text-xs mb-1">Fecha límite (opcional)</label>
+                            <input type="datetime-local" id="assignDueDate" class="w-full bg-purple-900/30 border border-purple-700/50 rounded-lg px-3 py-2 text-white text-sm focus:outline-none">
+                        </div>
+                    </div>
+                    
+                    <div class="space-y-2">
+                        <label class="flex items-center gap-2 text-purple-300 text-sm cursor-pointer">
+                            <input type="checkbox" id="assignShowResults" checked class="rounded bg-purple-900/50 border-purple-700">
+                            Mostrar resultados al estudiante
+                        </label>
+                        <label class="flex items-center gap-2 text-purple-300 text-sm cursor-pointer">
+                            <input type="checkbox" id="assignAllowRetake" checked class="rounded bg-purple-900/50 border-purple-700">
+                            Permitir reintentos después de agotar intentos
+                        </label>
+                    </div>
+                </div>
+                
+                <button onclick="assignExam()" class="w-full btn-spiritual py-3 rounded-xl font-semibold mt-6">
+                    <i class="fas fa-paper-plane mr-2"></i> Asignar Examen
+                </button>
+            </div>
+        </div>
+    </div>`;
+}
+
+// Open grade submission modal
+async function openGradeSubmission(examId, submissionId) {
+    showToast('Cargando detalles...', 'info');
+    
+    const result = await api(`/teacher/${state.user.id}/exams/${examId}/submissions/${submissionId}`);
+    
+    if (result) {
+        state.gradingSubmission = result;
+        state.showGradeSubmission = true;
+        render();
+    } else {
+        showToast('Error al cargar los detalles', 'error');
+    }
+}
+
+// Render grade submission modal
+function renderGradeSubmissionModal() {
+    if (!state.gradingSubmission) return '';
+    
+    const { submission, exam } = state.gradingSubmission;
+    
+    return `<div class="fixed inset-0 modal-overlay z-50 flex items-center justify-center p-4" onclick="if(event.target===this){state.showGradeSubmission=false;state.gradingSubmission=null;render()}">
+        <div class="gradient-border w-full max-w-4xl max-h-[90vh] overflow-y-auto slide-up">
+            <div class="gradient-border-inner">
+                <div class="flex justify-between items-center p-6 border-b border-purple-800/30">
+                    <div>
+                        <h3 class="font-cinzel text-xl text-white">📝 Calificar Examen</h3>
+                        <p class="text-purple-400 text-sm">${exam.title}</p>
+                    </div>
+                    <button onclick="state.showGradeSubmission=false;state.gradingSubmission=null;render()" class="text-purple-400 hover:text-white"><i class="fas fa-times text-xl"></i></button>
+                </div>
+                
+                <!-- Student Info -->
+                <div class="p-6 border-b border-purple-800/30 bg-purple-900/20">
+                    <div class="flex items-center justify-between gap-4">
+                        <div class="flex items-center gap-3">
+                            <div class="avatar-ring w-14 h-14">
+                                <div class="w-full h-full rounded-full bg-purple-800 flex items-center justify-center text-3xl">${submission.student?.avatar || '🙏'}</div>
+                            </div>
+                            <div>
+                                <h4 class="text-white font-semibold text-lg">${submission.student?.name || 'Estudiante'}</h4>
+                                <p class="text-purple-400 text-sm">${submission.student?.email || ''}</p>
+                                <p class="text-purple-500 text-xs">Enviado: ${new Date(submission.submittedAt).toLocaleString()}</p>
+                            </div>
+                        </div>
+                        <div class="text-center">
+                            <p class="text-4xl font-bold ${submission.score?.passed ? 'text-green-400' : submission.score?.passed === false ? 'text-red-400' : 'text-amber-400'}">
+                                ${submission.score?.percentage || 0}%
+                            </p>
+                            <p class="text-purple-400">${submission.score?.earnedPoints || 0}/${exam.totalPoints} pts</p>
+                            <p class="text-sm ${submission.score?.passed ? 'text-green-500' : submission.score?.passed === false ? 'text-red-500' : 'text-amber-500'}">
+                                ${submission.score?.passed === true ? '✅ Aprobado' : submission.score?.passed === false ? '❌ Reprobado' : '⏳ Pendiente revisión'}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Questions and Answers -->
+                <div class="p-6 space-y-4">
+                    <h4 class="text-white font-semibold">📋 Respuestas del Estudiante</h4>
+                    
+                    ${submission.results?.map((result, index) => `
+                        <div class="gradient-border ${result.isCorrect === true ? 'border-green-600/30' : result.isCorrect === false ? 'border-red-600/30' : 'border-amber-600/30'}">
+                            <div class="gradient-border-inner p-4">
+                                <div class="flex items-start gap-3">
+                                    <span class="w-8 h-8 rounded-full ${result.isCorrect === true ? 'bg-green-600' : result.isCorrect === false ? 'bg-red-600' : 'bg-amber-600'} flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                                        ${index + 1}
+                                    </span>
+                                    <div class="flex-1">
+                                        <div class="flex items-start justify-between gap-4 mb-2">
+                                            <p class="text-white">${result.question}</p>
+                                            <span class="text-purple-400 text-sm whitespace-nowrap">${result.type}</span>
+                                        </div>
+                                        
+                                        <div class="space-y-2 text-sm">
+                                            <div class="bg-purple-900/30 rounded-lg p-2">
+                                                <span class="text-purple-400">Respuesta del estudiante:</span>
+                                                <p class="text-white mt-1">${result.userAnswer || '<em class="text-purple-500">Sin respuesta</em>'}</p>
+                                            </div>
+                                            
+                                            ${result.isCorrect === false ? `
+                                                <div class="bg-green-900/20 rounded-lg p-2">
+                                                    <span class="text-green-400">Respuesta correcta:</span>
+                                                    <p class="text-green-300 mt-1">${result.correctAnswer}</p>
+                                                </div>
+                                            ` : ''}
+                                            
+                                            ${result.explanation ? `
+                                                <div class="bg-purple-900/20 rounded-lg p-2">
+                                                    <span class="text-purple-400">Explicación:</span>
+                                                    <p class="text-purple-300 mt-1 text-xs">${result.explanation}</p>
+                                                </div>
+                                            ` : ''}
+                                            
+                                            ${result.needsManualGrade ? `
+                                                <div class="bg-amber-900/20 rounded-lg p-3 mt-2">
+                                                    <p class="text-amber-400 text-xs mb-2">⚠️ Esta pregunta requiere calificación manual</p>
+                                                    <div class="flex items-center gap-3">
+                                                        <label class="text-purple-300 text-sm">Puntos (0-${result.maxPoints}):</label>
+                                                        <input type="number" id="grade-q-${index}" value="${result.points || 0}" min="0" max="${result.maxPoints}" class="w-20 bg-purple-900/30 border border-purple-700/50 rounded px-2 py-1 text-white text-sm focus:outline-none">
+                                                    </div>
+                                                    <textarea id="feedback-q-${index}" placeholder="Retroalimentación para el estudiante..." class="w-full mt-2 bg-purple-900/30 border border-purple-700/50 rounded-lg px-3 py-2 text-white text-sm placeholder-purple-500 focus:outline-none resize-none" rows="2">${result.teacherFeedback || ''}</textarea>
+                                                </div>
+                                            ` : `
+                                                <div class="flex items-center justify-between">
+                                                    <span class="text-sm ${result.isCorrect ? 'text-green-400' : 'text-red-400'}">
+                                                        ${result.isCorrect ? '✓ Correcta' : '✗ Incorrecta'}
+                                                    </span>
+                                                    <span class="text-purple-400 text-sm font-semibold">${result.points}/${result.maxPoints} pts</span>
+                                                </div>
+                                            `}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('')}
+                    
+                    <!-- General Feedback -->
+                    <div class="gradient-border mt-6">
+                        <div class="gradient-border-inner p-4">
+                            <h5 class="text-white font-semibold mb-3">💬 Retroalimentación General</h5>
+                            <textarea id="gradeGeneralFeedback" placeholder="Escribe un mensaje para el estudiante sobre su desempeño..." class="w-full bg-purple-900/30 border border-purple-700/50 rounded-lg px-4 py-3 text-white placeholder-purple-500 focus:outline-none resize-none" rows="3">${submission.teacherFeedback || ''}</textarea>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Action Buttons -->
+                <div class="p-6 border-t border-purple-800/30 flex gap-3">
+                    <button onclick="state.showGradeSubmission=false;state.gradingSubmission=null;render()" class="flex-1 btn-secondary py-3 rounded-xl">
+                        Cancelar
+                    </button>
+                    <button onclick="saveGrade()" class="flex-1 btn-spiritual py-3 rounded-xl font-semibold">
+                        <i class="fas fa-save mr-2"></i> Guardar Calificación
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>`;
+}
+
+// Save grade
+async function saveGrade() {
+    if (!state.gradingSubmission) return;
+    
+    const { submission, exam } = state.gradingSubmission;
+    
+    // Collect question grades for manual questions
+    const questionGrades = [];
+    submission.results?.forEach((result, index) => {
+        if (result.needsManualGrade) {
+            const points = parseInt($(`grade-q-${index}`)?.value) || 0;
+            const feedback = $(`feedback-q-${index}`)?.value || '';
+            questionGrades.push({
+                questionId: result.questionId,
+                points: Math.min(points, result.maxPoints),
+                feedback
+            });
+        }
+    });
+    
+    const generalFeedback = $('gradeGeneralFeedback')?.value || '';
+    
+    showToast('Guardando calificación...', 'info');
+    
+    const result = await api(`/teacher/${state.user.id}/exams/${exam.id}/submissions/${submission.id}/grade`, {
+        method: 'POST',
+        body: {
+            questionGrades,
+            feedback: generalFeedback
+        }
+    });
+    
+    if (result?.success) {
+        state.showGradeSubmission = false;
+        state.gradingSubmission = null;
+        
+        // Refresh submissions view
+        await viewExamSubmissions(exam.id);
+        await fetchTeacherExams();
+        
+        showToast('Calificación guardada ✨', 'success');
+    } else {
+        showToast(result?.error || 'Error al guardar calificación', 'error');
+    }
+}
+
+// Delete teacher exam
+async function deleteTeacherExam(examId) {
+    if (!confirm('¿Estás seguro de eliminar este examen? Esta acción no se puede deshacer.')) return;
+    
+    const result = await api(`/teacher/${state.user.id}/exams/${examId}`, {
+        method: 'DELETE'
+    });
+    
+    if (result?.success) {
+        state.teacherExams = state.teacherExams.filter(e => e.id !== examId);
+        showToast('Examen eliminado', 'success');
+        render();
+    } else {
+        showToast(result?.error || 'Error al eliminar examen', 'error');
+    }
+}
+
 // Initialize
 async function init() {
     createStars();
@@ -3209,9 +4340,344 @@ async function init() {
     
     if (state.user) {
         state.screen = 'main';
+        if (state.user.role !== 'teacher') {
+            fetchStudentExams();
+        }
     }
     
     render();
+}
+
+// ============================================================
+// NEW RENDER FUNCTIONS - Student Exams, Certificate, Events
+// ============================================================
+
+function renderStudentExams() {
+    if (state.takingExam) return renderTakingExam();
+    if (state.examResults) return renderExamResults();
+    
+    const exams = state.studentExams || [];
+    const pending = exams.filter(e => e.status === 'pending');
+    const attempted = exams.filter(e => e.status === 'attempted');
+    const passed = exams.filter(e => e.status === 'passed');
+    
+    return `<div class="max-w-4xl mx-auto">
+        <div class="flex items-center justify-between mb-6 flex-wrap gap-3">
+            <h1 class="font-cinzel text-2xl text-white">📝 Mis Exámenes</h1>
+            <button onclick="fetchStudentExams().then(render)" class="btn-secondary px-4 py-2 rounded-lg text-sm text-purple-300"><i class="fas fa-sync-alt mr-1"></i> Actualizar</button>
+        </div>
+        
+        <!-- Stats -->
+        <div class="grid grid-cols-3 gap-4 mb-6">
+            <div class="gradient-border"><div class="gradient-border-inner p-4 text-center">
+                <div class="text-3xl font-bold text-amber-400">${pending.length}</div>
+                <div class="text-xs text-purple-500">Pendientes</div>
+            </div></div>
+            <div class="gradient-border"><div class="gradient-border-inner p-4 text-center">
+                <div class="text-3xl font-bold text-blue-400">${attempted.length}</div>
+                <div class="text-xs text-purple-500">En Revisión</div>
+            </div></div>
+            <div class="gradient-border"><div class="gradient-border-inner p-4 text-center">
+                <div class="text-3xl font-bold text-green-400">${passed.length}</div>
+                <div class="text-xs text-purple-500">Aprobados</div>
+            </div></div>
+        </div>
+        
+        ${exams.length === 0 ? `
+            <div class="gradient-border"><div class="gradient-border-inner p-12 text-center">
+                <div class="text-5xl mb-4">📋</div>
+                <h3 class="text-white text-lg mb-2">Sin exámenes asignados</h3>
+                <p class="text-purple-400 text-sm">Cuando un maestro te asigne un examen, aparecerá aquí</p>
+            </div></div>
+        ` : `
+            <div class="space-y-4">
+                ${exams.map(exam => `
+                    <div class="gradient-border card-glow">
+                        <div class="gradient-border-inner p-5">
+                            <div class="flex items-start justify-between gap-4">
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex items-center gap-2 mb-1">
+                                        <h3 class="text-white font-semibold truncate">${exam.title}</h3>
+                                        <span class="text-xs px-2 py-0.5 rounded-full ${exam.status === 'passed' ? 'bg-green-900/50 text-green-400' : exam.status === 'attempted' ? 'bg-blue-900/50 text-blue-400' : 'bg-amber-900/50 text-amber-400'}">${exam.status === 'passed' ? '✅ Aprobado' : exam.status === 'attempted' ? '⏳ Revisión' : '📋 Pendiente'}</span>
+                                    </div>
+                                    <p class="text-purple-400 text-sm mb-2">${exam.description || ''}</p>
+                                    <div class="flex flex-wrap gap-3 text-xs text-purple-500">
+                                        <span><i class="fas fa-question-circle mr-1"></i>${exam.questionsCount} preguntas</span>
+                                        <span><i class="fas fa-star mr-1"></i>${exam.totalPoints} puntos</span>
+                                        <span><i class="fas fa-clock mr-1"></i>${exam.timeLimit} min</span>
+                                        <span><i class="fas fa-redo mr-1"></i>${exam.attemptsUsed}/${exam.maxAttempts} intentos</span>
+                                        ${exam.dueDate ? `<span class="text-amber-400"><i class="fas fa-calendar mr-1"></i>Límite: ${new Date(exam.dueDate).toLocaleDateString()}</span>` : ''}
+                                    </div>
+                                    ${exam.latestScore ? `
+                                        <div class="mt-3 flex items-center gap-3">
+                                            <div class="h-2 flex-1 bg-purple-900 rounded-full overflow-hidden">
+                                                <div class="h-full ${exam.latestScore.passed ? 'bg-green-500' : 'bg-red-500'}" style="width: ${exam.latestScore.percentage}%"></div>
+                                            </div>
+                                            <span class="text-sm font-bold ${exam.latestScore.passed ? 'text-green-400' : 'text-red-400'}">${exam.latestScore.percentage}%</span>
+                                        </div>
+                                    ` : ''}
+                                </div>
+                                <div>
+                                    ${exam.canAttempt && exam.status !== 'passed' ? `
+                                        <button onclick="takeExam('${exam.id}')" class="btn-spiritual px-5 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap">
+                                            <i class="fas fa-play mr-1"></i> ${exam.attemptsUsed > 0 ? 'Reintentar' : 'Comenzar'}
+                                        </button>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `}
+    </div>`;
+}
+
+function renderTakingExam() {
+    const exam = state.takingExam;
+    if (!exam) return '';
+    
+    const answered = state.examAnswers.filter(a => a !== null && a !== undefined && a !== '').length;
+    const progress = Math.round((answered / exam.questions.length) * 100);
+    
+    return `<div class="max-w-3xl mx-auto">
+        <!-- Exam Header -->
+        <div class="gradient-border mb-6 sticky top-16 z-30">
+            <div class="gradient-border-inner p-4">
+                <div class="flex items-center justify-between mb-2">
+                    <h2 class="font-cinzel text-lg text-white truncate">${exam.title}</h2>
+                    <span class="text-sm text-purple-400">Intento ${exam.attemptNumber}/${exam.maxAttempts}</span>
+                </div>
+                <div class="flex items-center gap-4">
+                    <div class="flex-1 h-2 bg-purple-900 rounded-full overflow-hidden">
+                        <div class="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all" style="width:${progress}%"></div>
+                    </div>
+                    <span class="text-sm text-white">${answered}/${exam.questions.length}</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Questions -->
+        <div class="space-y-6">
+            ${exam.questions.map((q, i) => `
+                <div class="gradient-border fade-in" id="exam-q-${i}">
+                    <div class="gradient-border-inner p-5">
+                        <div class="flex items-start gap-3 mb-4">
+                            <span class="w-8 h-8 rounded-full ${state.examAnswers[i] != null && state.examAnswers[i] !== '' ? 'bg-green-600' : 'bg-purple-700'} flex items-center justify-center text-sm font-bold text-white flex-shrink-0">${i+1}</span>
+                            <div class="flex-1">
+                                <p class="text-white font-medium">${q.question}</p>
+                                <div class="flex gap-2 mt-1">
+                                    <span class="text-[10px] px-2 py-0.5 rounded bg-purple-900/50 text-purple-400">${q.points} pts</span>
+                                    <span class="text-[10px] px-2 py-0.5 rounded bg-purple-900/50 text-purple-400">${q.difficulty === 'easy' ? 'Fácil' : q.difficulty === 'medium' ? 'Medio' : 'Difícil'}</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        ${q.type === 'multiple_choice' ? `
+                            <div class="space-y-2 pl-11">
+                                ${q.options.map((opt, j) => `
+                                    <label class="flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors ${state.examAnswers[i] === opt ? 'bg-purple-700/50 ring-1 ring-purple-500' : 'bg-purple-900/20 hover:bg-purple-900/40'}">
+                                        <input type="radio" name="q${i}" value="${opt}" ${state.examAnswers[i] === opt ? 'checked' : ''} onchange="setExamAnswer(${i},'${opt.replace(/'/g, "\\'")}')" class="accent-purple-500">
+                                        <span class="text-white text-sm">${opt}</span>
+                                    </label>
+                                `).join('')}
+                            </div>
+                        ` : q.type === 'true_false' ? `
+                            <div class="flex gap-3 pl-11">
+                                <label class="flex-1 p-3 rounded-lg cursor-pointer text-center transition-colors ${state.examAnswers[i] === 'Verdadero' ? 'bg-green-700/50 ring-1 ring-green-500' : 'bg-purple-900/20 hover:bg-purple-900/40'}">
+                                    <input type="radio" name="q${i}" value="Verdadero" ${state.examAnswers[i] === 'Verdadero' ? 'checked' : ''} onchange="setExamAnswer(${i},'Verdadero')" class="sr-only">
+                                    <span class="text-white text-sm font-medium">✅ Verdadero</span>
+                                </label>
+                                <label class="flex-1 p-3 rounded-lg cursor-pointer text-center transition-colors ${state.examAnswers[i] === 'Falso' ? 'bg-red-700/50 ring-1 ring-red-500' : 'bg-purple-900/20 hover:bg-purple-900/40'}">
+                                    <input type="radio" name="q${i}" value="Falso" ${state.examAnswers[i] === 'Falso' ? 'checked' : ''} onchange="setExamAnswer(${i},'Falso')" class="sr-only">
+                                    <span class="text-white text-sm font-medium">❌ Falso</span>
+                                </label>
+                            </div>
+                        ` : q.type === 'fill_blank' || q.type === 'short_answer' ? `
+                            <div class="pl-11">
+                                <input type="text" value="${state.examAnswers[i] || ''}" onchange="setExamAnswer(${i},this.value)" placeholder="${q.type === 'fill_blank' ? 'Completa la respuesta...' : 'Escribe tu respuesta...'}" class="w-full bg-purple-900/30 border border-purple-700/50 rounded-lg px-4 py-3 text-white placeholder-purple-500 focus:outline-none">
+                            </div>
+                        ` : q.type === 'essay' ? `
+                            <div class="pl-11">
+                                <textarea onchange="setExamAnswer(${i},this.value)" rows="4" placeholder="Desarrolla tu respuesta..." class="w-full bg-purple-900/30 border border-purple-700/50 rounded-lg px-4 py-3 text-white placeholder-purple-500 focus:outline-none resize-none">${state.examAnswers[i] || ''}</textarea>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+        
+        <!-- Submit Bar -->
+        <div class="gradient-border mt-6">
+            <div class="gradient-border-inner p-4 flex items-center justify-between">
+                <button onclick="cancelExam()" class="btn-secondary px-5 py-2.5 rounded-xl text-purple-300">
+                    <i class="fas fa-times mr-1"></i> Cancelar
+                </button>
+                <div class="text-purple-400 text-sm">${answered} de ${exam.questions.length} respondidas</div>
+                <button onclick="submitExam()" class="btn-spiritual px-6 py-2.5 rounded-xl font-semibold">
+                    <i class="fas fa-paper-plane mr-1"></i> Enviar Examen
+                </button>
+            </div>
+        </div>
+    </div>`;
+}
+
+function renderExamResults() {
+    const r = state.examResults;
+    if (!r) return '';
+    
+    const score = r.score || {};
+    const passed = score.passed;
+    
+    return `<div class="max-w-3xl mx-auto">
+        <div class="gradient-border mb-6">
+            <div class="gradient-border-inner p-8 text-center">
+                <div class="text-6xl mb-4">${passed ? '🎉' : '📖'}</div>
+                <h2 class="font-cinzel text-2xl text-white mb-2">${passed ? '¡Felicidades!' : 'Sigue Practicando'}</h2>
+                <p class="text-purple-300 mb-6">${r.feedback || ''}</p>
+                
+                <div class="inline-flex items-center justify-center w-32 h-32 rounded-full ${passed ? 'bg-green-900/30 ring-4 ring-green-500' : 'bg-red-900/30 ring-4 ring-red-500'} mb-4">
+                    <span class="text-4xl font-bold ${passed ? 'text-green-400' : 'text-red-400'}">${score.percentage || 0}%</span>
+                </div>
+                
+                <div class="grid grid-cols-3 gap-4 max-w-md mx-auto">
+                    <div class="bg-purple-900/30 rounded-lg p-3">
+                        <div class="text-xl font-bold text-white">${score.correct || 0}</div>
+                        <div class="text-xs text-green-400">Correctas</div>
+                    </div>
+                    <div class="bg-purple-900/30 rounded-lg p-3">
+                        <div class="text-xl font-bold text-white">${(score.total || 0) - (score.correct || 0)}</div>
+                        <div class="text-xs text-red-400">Incorrectas</div>
+                    </div>
+                    <div class="bg-purple-900/30 rounded-lg p-3">
+                        <div class="text-xl font-bold text-white">${score.earnedPoints || 0}</div>
+                        <div class="text-xs text-purple-400">Puntos</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        ${r.results ? `
+            <h3 class="font-cinzel text-lg text-white mb-4">Detalle de Respuestas</h3>
+            <div class="space-y-3 mb-6">
+                ${r.results.map((result, i) => `
+                    <div class="gradient-border">
+                        <div class="gradient-border-inner p-4">
+                            <div class="flex items-start gap-3">
+                                <span class="w-7 h-7 rounded-full ${result.isCorrect === true ? 'bg-green-600' : result.isCorrect === false ? 'bg-red-600' : 'bg-yellow-600'} flex items-center justify-center text-xs text-white flex-shrink-0">${result.isCorrect === true ? '✓' : result.isCorrect === false ? '✗' : '?'}</span>
+                                <div class="flex-1">
+                                    <p class="text-white text-sm mb-1">${result.question}</p>
+                                    <p class="text-sm ${result.isCorrect ? 'text-green-400' : 'text-red-400'}">Tu respuesta: ${result.userAnswer || '(vacía)'}</p>
+                                    ${!result.isCorrect && result.correctAnswer ? `<p class="text-sm text-green-400">Respuesta correcta: ${result.correctAnswer}</p>` : ''}
+                                    ${result.explanation ? `<p class="text-xs text-purple-400 mt-2 italic">${result.explanation}</p>` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        ` : ''}
+        
+        <div class="text-center">
+            <button onclick="state.examResults=null;render()" class="btn-spiritual px-8 py-3 rounded-xl font-semibold">
+                <i class="fas fa-arrow-left mr-2"></i> Volver a Mis Exámenes
+            </button>
+        </div>
+    </div>`;
+}
+
+function renderCertificateModal() {
+    const courseId = state.showCertificate;
+    const course = state.courses.find(c => c.id === courseId);
+    if (!course) return '';
+    
+    const date = new Date().toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' });
+    
+    return `<div class="fixed inset-0 modal-overlay z-50 flex items-center justify-center p-4" onclick="if(event.target===this){state.showCertificate=null;render()}">
+        <div class="w-full max-w-2xl slide-up">
+            <div class="bg-gradient-to-br from-purple-900 via-indigo-900 to-purple-900 rounded-2xl p-8 border-4 border-double border-golden-400/50 text-center relative overflow-hidden">
+                <div class="absolute inset-0 opacity-10" style="background-image:radial-gradient(circle at 50% 50%, rgba(255,215,0,0.3) 0%, transparent 70%)"></div>
+                <div class="relative z-10">
+                    <div class="text-5xl mb-3">🏆</div>
+                    <h3 class="font-cinzel text-golden-400 text-lg tracking-widest mb-1">CERTIFICADO DE FINALIZACIÓN</h3>
+                    <div class="w-32 h-0.5 bg-golden-400/50 mx-auto mb-6"></div>
+                    
+                    <p class="text-purple-300 text-sm mb-2">Se certifica que</p>
+                    <h2 class="font-cinzel text-3xl text-white mb-2">${state.user.name}</h2>
+                    <p class="text-purple-300 text-sm mb-4">Ha completado satisfactoriamente el curso</p>
+                    <h3 class="font-cinzel text-xl text-golden-400 mb-6">"${course.title}"</h3>
+                    
+                    <div class="flex justify-around mb-6 text-sm text-purple-400">
+                        <div><span class="block text-white font-medium">${course.lessons?.length || 0}</span> Lecciones</div>
+                        <div><span class="block text-white font-medium">${course.duration || 'N/A'}</span> Duración</div>
+                        <div><span class="block text-white font-medium">${date}</span> Fecha</div>
+                    </div>
+                    
+                    <div class="flex items-center justify-center gap-3 mb-6">
+                        <div class="w-12 h-0.5 bg-golden-400/30"></div>
+                        <span class="text-3xl">✨</span>
+                        <div class="w-12 h-0.5 bg-golden-400/30"></div>
+                    </div>
+                    
+                    <p class="text-purple-400 text-sm font-cinzel">Academia de Luz</p>
+                    <p class="text-purple-500 text-xs mt-1">Maestro: ${course.teacher}</p>
+                </div>
+            </div>
+            <div class="text-center mt-4">
+                <button onclick="state.showCertificate=null;render()" class="btn-secondary px-6 py-2 rounded-lg text-purple-300">Cerrar</button>
+            </div>
+        </div>
+    </div>`;
+}
+
+function renderCreateEventModal() {
+    const today = new Date().toISOString().split('T')[0];
+    
+    return `<div class="fixed inset-0 modal-overlay z-50 flex items-center justify-center p-4" onclick="if(event.target===this){state.showCreateEvent=false;render()}">
+        <div class="gradient-border w-full max-w-md slide-up">
+            <div class="gradient-border-inner p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="font-cinzel text-xl text-white">📅 Crear Evento</h3>
+                    <button onclick="state.showCreateEvent=false;render()" class="text-purple-400 hover:text-white"><i class="fas fa-times"></i></button>
+                </div>
+                
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-purple-300 text-sm mb-2">Título *</label>
+                        <input type="text" id="eventTitle" placeholder="Nombre del evento" class="w-full bg-purple-900/30 border border-purple-700/50 rounded-lg px-4 py-3 text-white placeholder-purple-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-purple-300 text-sm mb-2">Descripción</label>
+                        <textarea id="eventDescription" rows="2" placeholder="Describe el evento..." class="w-full bg-purple-900/30 border border-purple-700/50 rounded-lg px-4 py-3 text-white placeholder-purple-500 focus:outline-none resize-none"></textarea>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-purple-300 text-sm mb-2">Fecha *</label>
+                            <input type="date" id="eventDate" min="${today}" class="w-full bg-purple-900/30 border border-purple-700/50 rounded-lg px-4 py-3 text-white focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-purple-300 text-sm mb-2">Hora *</label>
+                            <input type="time" id="eventTime" value="19:00" class="w-full bg-purple-900/30 border border-purple-700/50 rounded-lg px-4 py-3 text-white focus:outline-none">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-purple-300 text-sm mb-2">Tipo de evento</label>
+                        <select id="eventType" class="w-full bg-purple-900/30 border border-purple-700/50 rounded-lg px-4 py-3 text-white focus:outline-none">
+                            <option value="meditation">🧘 Meditación</option>
+                            <option value="class">📚 Clase</option>
+                            <option value="ceremony">✨ Ceremonia</option>
+                            <option value="workshop">🔮 Taller</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="flex gap-3 mt-6">
+                    <button onclick="state.showCreateEvent=false;render()" class="flex-1 btn-secondary py-3 rounded-xl">Cancelar</button>
+                    <button onclick="createEvent()" class="flex-1 btn-spiritual py-3 rounded-xl font-semibold">Crear Evento</button>
+                </div>
+            </div>
+        </div>
+    </div>`;
 }
 
 init();

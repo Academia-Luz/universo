@@ -1853,7 +1853,11 @@ app.get('/api/chat/history/:userId', async (c) => {
 const superAgentStore = {
   exams: new Map<string, any>(),
   presentations: new Map<string, any>(),
-  lessonDrafts: new Map<string, any>()
+  lessonDrafts: new Map<string, any>(),
+  // Exam assignments and submissions for teacher grading
+  examAssignments: new Map<string, any>(), // examId -> assignment details
+  examSubmissions: new Map<string, any[]>(), // examId -> array of student submissions
+  studentExamAttempts: new Map<string, any[]>() // examId-studentId -> attempts
 }
 
 // Types for Super Agent
@@ -2124,6 +2128,644 @@ app.get('/api/super-agent/courses/:courseId/exams', async (c) => {
     .filter(e => e.courseId === courseId)
   
   return c.json(exams)
+})
+
+// ============================================================
+// TEACHER EXAM MANAGEMENT - ASIGNAR, VER, CALIFICAR EXÁMENES
+// ============================================================
+
+// Listar todos los exámenes creados por el maestro
+app.get('/api/teacher/:teacherId/exams', async (c) => {
+  const teacherId = c.req.param('teacherId')
+  
+  const teacher = dataStore.members.find(m => m.id === teacherId && m.role === 'teacher')
+  if (!teacher) return c.json({ error: 'Maestro no encontrado' }, 404)
+  
+  const exams = Array.from(superAgentStore.exams.values())
+    .filter(e => e.teacherId === teacherId)
+    .map(exam => {
+      const assignment = superAgentStore.examAssignments.get(exam.id)
+      const submissions = superAgentStore.examSubmissions.get(exam.id) || []
+      
+      return {
+        ...exam,
+        isAssigned: !!assignment,
+        assignment: assignment || null,
+        submissionsCount: submissions.length,
+        gradedCount: submissions.filter((s: any) => s.graded).length,
+        pendingCount: submissions.filter((s: any) => !s.graded).length,
+        averageScore: submissions.length > 0 
+          ? Math.round(submissions.reduce((acc: number, s: any) => acc + (s.score?.percentage || 0), 0) / submissions.length)
+          : null
+      }
+    })
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+  
+  return c.json(exams)
+})
+
+// Asignar examen a un curso/estudiantes
+app.post('/api/teacher/:teacherId/exams/:examId/assign', async (c) => {
+  const { teacherId, examId } = c.req.param()
+  const { courseId, studentIds, dueDate, maxAttempts, showResults, allowRetake } = await c.req.json()
+  
+  const teacher = dataStore.members.find(m => m.id === teacherId && m.role === 'teacher')
+  if (!teacher) return c.json({ error: 'Maestro no encontrado' }, 404)
+  
+  const exam = superAgentStore.exams.get(examId)
+  if (!exam) return c.json({ error: 'Examen no encontrado' }, 404)
+  if (exam.teacherId !== teacherId) return c.json({ error: 'No autorizado' }, 403)
+  
+  // Get course and enrolled students
+  let targetStudents = studentIds || []
+  if (courseId) {
+    const course = dataStore.courses.find(c => c.id === courseId && c.teacherId === teacherId)
+    if (course) {
+      targetStudents = course.enrolledStudents || []
+      exam.courseId = courseId
+    }
+  }
+  
+  const assignment = {
+    id: generateId(),
+    examId,
+    teacherId,
+    courseId: courseId || null,
+    studentIds: targetStudents,
+    dueDate: dueDate || null,
+    maxAttempts: maxAttempts || 3,
+    showResults: showResults !== false,
+    allowRetake: allowRetake !== false,
+    assignedAt: new Date().toISOString(),
+    status: 'active'
+  }
+  
+  superAgentStore.examAssignments.set(examId, assignment)
+  superAgentStore.exams.set(examId, exam)
+  
+  // Initialize submissions array
+  if (!superAgentStore.examSubmissions.has(examId)) {
+    superAgentStore.examSubmissions.set(examId, [])
+  }
+  
+  // Notify students
+  targetStudents.forEach((studentId: string) => {
+    const notifications = dataStore.notifications.get(studentId) || []
+    notifications.unshift({
+      id: generateId(),
+      type: 'exam_assigned',
+      message: `📝 Nuevo examen asignado: "${exam.title}"${dueDate ? ` - Fecha límite: ${new Date(dueDate).toLocaleDateString()}` : ''}`,
+      examId,
+      read: false,
+      createdAt: new Date().toISOString()
+    })
+    dataStore.notifications.set(studentId, notifications)
+  })
+  
+  return c.json({ 
+    success: true, 
+    assignment,
+    message: `Examen asignado a ${targetStudents.length} estudiantes`
+  })
+})
+
+// Ver submissions de un examen (para el maestro)
+app.get('/api/teacher/:teacherId/exams/:examId/submissions', async (c) => {
+  const { teacherId, examId } = c.req.param()
+  
+  const teacher = dataStore.members.find(m => m.id === teacherId && m.role === 'teacher')
+  if (!teacher) return c.json({ error: 'Maestro no encontrado' }, 404)
+  
+  const exam = superAgentStore.exams.get(examId)
+  if (!exam) return c.json({ error: 'Examen no encontrado' }, 404)
+  if (exam.teacherId !== teacherId) return c.json({ error: 'No autorizado' }, 403)
+  
+  const submissions = superAgentStore.examSubmissions.get(examId) || []
+  const assignment = superAgentStore.examAssignments.get(examId)
+  
+  // Enrich submissions with student info
+  const enrichedSubmissions = submissions.map((sub: any) => {
+    const student = dataStore.members.find(m => m.id === sub.studentId)
+    return {
+      ...sub,
+      student: student ? {
+        id: student.id,
+        name: student.name,
+        avatar: student.avatar,
+        email: student.email,
+        level: student.level
+      } : null
+    }
+  }).sort((a: any, b: any) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime())
+  
+  // Get students who haven't taken the exam yet
+  const assignedStudents = assignment?.studentIds || []
+  const submittedStudentIds = submissions.map((s: any) => s.studentId)
+  const pendingStudents = assignedStudents
+    .filter((id: string) => !submittedStudentIds.includes(id))
+    .map((id: string) => {
+      const student = dataStore.members.find(m => m.id === id)
+      return student ? {
+        id: student.id,
+        name: student.name,
+        avatar: student.avatar,
+        email: student.email
+      } : null
+    })
+    .filter(Boolean)
+  
+  return c.json({
+    exam: {
+      id: exam.id,
+      title: exam.title,
+      description: exam.description,
+      totalPoints: exam.totalPoints,
+      passingScore: exam.passingScore,
+      questionsCount: exam.questions.length
+    },
+    assignment,
+    submissions: enrichedSubmissions,
+    pendingStudents,
+    stats: {
+      totalAssigned: assignedStudents.length,
+      totalSubmitted: submissions.length,
+      totalGraded: submissions.filter((s: any) => s.graded).length,
+      totalPending: submissions.filter((s: any) => !s.graded).length,
+      averageScore: submissions.length > 0 
+        ? Math.round(submissions.reduce((acc: number, s: any) => acc + (s.score?.percentage || 0), 0) / submissions.length)
+        : 0,
+      passedCount: submissions.filter((s: any) => s.score?.passed).length,
+      failedCount: submissions.filter((s: any) => s.score && !s.score.passed).length
+    }
+  })
+})
+
+// Ver detalle de una submission específica
+app.get('/api/teacher/:teacherId/exams/:examId/submissions/:submissionId', async (c) => {
+  const { teacherId, examId, submissionId } = c.req.param()
+  
+  const teacher = dataStore.members.find(m => m.id === teacherId && m.role === 'teacher')
+  if (!teacher) return c.json({ error: 'Maestro no encontrado' }, 404)
+  
+  const exam = superAgentStore.exams.get(examId)
+  if (!exam) return c.json({ error: 'Examen no encontrado' }, 404)
+  if (exam.teacherId !== teacherId) return c.json({ error: 'No autorizado' }, 403)
+  
+  const submissions = superAgentStore.examSubmissions.get(examId) || []
+  const submission = submissions.find((s: any) => s.id === submissionId)
+  
+  if (!submission) return c.json({ error: 'Entrega no encontrada' }, 404)
+  
+  const student = dataStore.members.find(m => m.id === submission.studentId)
+  
+  return c.json({
+    submission: {
+      ...submission,
+      student: student ? {
+        id: student.id,
+        name: student.name,
+        avatar: student.avatar,
+        email: student.email,
+        level: student.level
+      } : null
+    },
+    exam: {
+      id: exam.id,
+      title: exam.title,
+      questions: exam.questions,
+      totalPoints: exam.totalPoints,
+      passingScore: exam.passingScore
+    }
+  })
+})
+
+// Calificar/revisar submission (para preguntas manuales y ajustes)
+app.post('/api/teacher/:teacherId/exams/:examId/submissions/:submissionId/grade', async (c) => {
+  const { teacherId, examId, submissionId } = c.req.param()
+  const { questionGrades, feedback, adjustedScore } = await c.req.json()
+  
+  const teacher = dataStore.members.find(m => m.id === teacherId && m.role === 'teacher')
+  if (!teacher) return c.json({ error: 'Maestro no encontrado' }, 404)
+  
+  const exam = superAgentStore.exams.get(examId)
+  if (!exam) return c.json({ error: 'Examen no encontrado' }, 404)
+  if (exam.teacherId !== teacherId) return c.json({ error: 'No autorizado' }, 403)
+  
+  const submissions = superAgentStore.examSubmissions.get(examId) || []
+  const submissionIndex = submissions.findIndex((s: any) => s.id === submissionId)
+  
+  if (submissionIndex === -1) return c.json({ error: 'Entrega no encontrada' }, 404)
+  
+  const submission = submissions[submissionIndex]
+  
+  // Update individual question grades if provided
+  if (questionGrades && submission.results) {
+    questionGrades.forEach((qg: { questionId: string; points: number; feedback?: string }) => {
+      const resultIndex = submission.results.findIndex((r: any) => r.questionId === qg.questionId)
+      if (resultIndex !== -1) {
+        submission.results[resultIndex].points = qg.points
+        submission.results[resultIndex].teacherFeedback = qg.feedback || ''
+        submission.results[resultIndex].manuallyGraded = true
+      }
+    })
+    
+    // Recalculate score
+    const newEarnedPoints = submission.results.reduce((acc: number, r: any) => acc + (r.points || 0), 0)
+    submission.score.earnedPoints = newEarnedPoints
+    submission.score.percentage = Math.round((newEarnedPoints / exam.totalPoints) * 100)
+    submission.score.passed = submission.score.percentage >= exam.passingScore
+    submission.score.correct = submission.results.filter((r: any) => r.isCorrect || r.points > 0).length
+  }
+  
+  // Apply adjusted score if provided
+  if (adjustedScore !== undefined) {
+    submission.score.adjustedScore = adjustedScore
+    submission.score.percentage = Math.round((adjustedScore / exam.totalPoints) * 100)
+    submission.score.passed = submission.score.percentage >= exam.passingScore
+    submission.score.earnedPoints = adjustedScore
+  }
+  
+  // Add teacher feedback
+  submission.teacherFeedback = feedback || submission.teacherFeedback || ''
+  submission.graded = true
+  submission.gradedAt = new Date().toISOString()
+  submission.gradedBy = teacherId
+  
+  // Update submission
+  submissions[submissionIndex] = submission
+  superAgentStore.examSubmissions.set(examId, submissions)
+  
+  // Update student points
+  const student = dataStore.members.find(m => m.id === submission.studentId)
+  if (student && submission.score.passed && !submission.pointsAwarded) {
+    student.points += submission.score.earnedPoints
+    student.points += 25 // Bonus por aprobar
+    submission.pointsAwarded = true
+    submissions[submissionIndex] = submission
+    superAgentStore.examSubmissions.set(examId, submissions)
+  }
+  
+  // Notify student
+  const notifications = dataStore.notifications.get(submission.studentId) || []
+  notifications.unshift({
+    id: generateId(),
+    type: 'exam_graded',
+    message: `📝 Tu examen "${exam.title}" ha sido calificado: ${submission.score.percentage}% ${submission.score.passed ? '✅ Aprobado' : '❌ Reprobado'}`,
+    examId,
+    submissionId,
+    read: false,
+    createdAt: new Date().toISOString()
+  })
+  dataStore.notifications.set(submission.studentId, notifications)
+  
+  return c.json({
+    success: true,
+    submission,
+    message: 'Examen calificado exitosamente'
+  })
+})
+
+// Eliminar asignación de examen
+app.delete('/api/teacher/:teacherId/exams/:examId/assignment', async (c) => {
+  const { teacherId, examId } = c.req.param()
+  
+  const teacher = dataStore.members.find(m => m.id === teacherId && m.role === 'teacher')
+  if (!teacher) return c.json({ error: 'Maestro no encontrado' }, 404)
+  
+  const exam = superAgentStore.exams.get(examId)
+  if (!exam) return c.json({ error: 'Examen no encontrado' }, 404)
+  if (exam.teacherId !== teacherId) return c.json({ error: 'No autorizado' }, 403)
+  
+  superAgentStore.examAssignments.delete(examId)
+  
+  return c.json({ success: true, message: 'Asignación de examen eliminada' })
+})
+
+// Eliminar examen completo
+app.delete('/api/teacher/:teacherId/exams/:examId', async (c) => {
+  const { teacherId, examId } = c.req.param()
+  
+  const teacher = dataStore.members.find(m => m.id === teacherId && m.role === 'teacher')
+  if (!teacher) return c.json({ error: 'Maestro no encontrado' }, 404)
+  
+  const exam = superAgentStore.exams.get(examId)
+  if (!exam) return c.json({ error: 'Examen no encontrado' }, 404)
+  if (exam.teacherId !== teacherId) return c.json({ error: 'No autorizado' }, 403)
+  
+  superAgentStore.exams.delete(examId)
+  superAgentStore.examAssignments.delete(examId)
+  superAgentStore.examSubmissions.delete(examId)
+  
+  return c.json({ success: true, message: 'Examen eliminado' })
+})
+
+// ============================================================
+// STUDENT EXAM ENDPOINTS
+// ============================================================
+
+// Listar exámenes asignados a un estudiante
+app.get('/api/student/:studentId/exams', async (c) => {
+  const studentId = c.req.param('studentId')
+  
+  const student = dataStore.members.find(m => m.id === studentId)
+  if (!student) return c.json({ error: 'Estudiante no encontrado' }, 404)
+  
+  const assignedExams: any[] = []
+  
+  superAgentStore.examAssignments.forEach((assignment: any, examId: string) => {
+    if (assignment.studentIds.includes(studentId) && assignment.status === 'active') {
+      const exam = superAgentStore.exams.get(examId)
+      if (exam) {
+        const submissions = superAgentStore.examSubmissions.get(examId) || []
+        const mySubmissions = submissions.filter((s: any) => s.studentId === studentId)
+        const latestSubmission = mySubmissions[mySubmissions.length - 1]
+        
+        assignedExams.push({
+          id: exam.id,
+          title: exam.title,
+          description: exam.description,
+          totalPoints: exam.totalPoints,
+          passingScore: exam.passingScore,
+          timeLimit: exam.timeLimit,
+          questionsCount: exam.questions.length,
+          dueDate: assignment.dueDate,
+          maxAttempts: assignment.maxAttempts,
+          attemptsUsed: mySubmissions.length,
+          canAttempt: mySubmissions.length < assignment.maxAttempts || assignment.allowRetake,
+          latestScore: latestSubmission?.score || null,
+          status: latestSubmission?.score?.passed ? 'passed' : latestSubmission ? 'attempted' : 'pending',
+          showResults: assignment.showResults
+        })
+      }
+    }
+  })
+  
+  return c.json(assignedExams)
+})
+
+// Tomar un examen (obtener las preguntas)
+app.get('/api/student/:studentId/exams/:examId/take', async (c) => {
+  const { studentId, examId } = c.req.param()
+  
+  const student = dataStore.members.find(m => m.id === studentId)
+  if (!student) return c.json({ error: 'Estudiante no encontrado' }, 404)
+  
+  const exam = superAgentStore.exams.get(examId)
+  if (!exam) return c.json({ error: 'Examen no encontrado' }, 404)
+  
+  const assignment = superAgentStore.examAssignments.get(examId)
+  if (!assignment || !assignment.studentIds.includes(studentId)) {
+    return c.json({ error: 'No tienes acceso a este examen' }, 403)
+  }
+  
+  const submissions = superAgentStore.examSubmissions.get(examId) || []
+  const mySubmissions = submissions.filter((s: any) => s.studentId === studentId)
+  
+  if (mySubmissions.length >= assignment.maxAttempts && !assignment.allowRetake) {
+    return c.json({ error: 'Has alcanzado el número máximo de intentos' }, 403)
+  }
+  
+  // Return exam without correct answers
+  const questionsWithoutAnswers = exam.questions.map((q: ExamQuestion) => ({
+    id: q.id,
+    type: q.type,
+    question: q.question,
+    options: q.options,
+    points: q.points,
+    difficulty: q.difficulty
+    // correctAnswer and explanation are hidden
+  }))
+  
+  return c.json({
+    id: exam.id,
+    title: exam.title,
+    description: exam.description,
+    timeLimit: exam.timeLimit,
+    totalPoints: exam.totalPoints,
+    passingScore: exam.passingScore,
+    questions: questionsWithoutAnswers,
+    attemptNumber: mySubmissions.length + 1,
+    maxAttempts: assignment.maxAttempts
+  })
+})
+
+// Enviar respuestas de examen (actualizado para crear submission completa)
+app.post('/api/student/:studentId/exams/:examId/submit', async (c) => {
+  const { studentId, examId } = c.req.param()
+  const { answers, startedAt, completedAt } = await c.req.json()
+  
+  const student = dataStore.members.find(m => m.id === studentId)
+  if (!student) return c.json({ error: 'Estudiante no encontrado' }, 404)
+  
+  const exam = superAgentStore.exams.get(examId)
+  if (!exam) return c.json({ error: 'Examen no encontrado' }, 404)
+  
+  const assignment = superAgentStore.examAssignments.get(examId)
+  if (!assignment || !assignment.studentIds.includes(studentId)) {
+    return c.json({ error: 'No tienes acceso a este examen' }, 403)
+  }
+  
+  // Grade the exam
+  let correctCount = 0
+  let totalPoints = 0
+  let earnedPoints = 0
+  const results: any[] = []
+  
+  exam.questions.forEach((q: ExamQuestion, index: number) => {
+    const userAnswer = answers[index]
+    const isCorrect = checkAnswer(q, userAnswer)
+    const needsManualGrade = q.type === 'short_answer' || q.type === 'essay'
+    
+    totalPoints += q.points
+    if (isCorrect && !needsManualGrade) {
+      correctCount++
+      earnedPoints += q.points
+    }
+    
+    results.push({
+      questionId: q.id,
+      question: q.question,
+      type: q.type,
+      userAnswer,
+      correctAnswer: q.correctAnswer,
+      isCorrect: needsManualGrade ? null : isCorrect,
+      points: needsManualGrade ? 0 : (isCorrect ? q.points : 0),
+      maxPoints: q.points,
+      explanation: assignment.showResults ? q.explanation : '',
+      needsManualGrade
+    })
+  })
+  
+  const percentage = Math.round((earnedPoints / totalPoints) * 100)
+  const passed = percentage >= exam.passingScore
+  const hasManualQuestions = results.some((r: any) => r.needsManualGrade)
+  
+  const submissionId = generateId()
+  const submission = {
+    id: submissionId,
+    examId,
+    studentId,
+    answers,
+    results,
+    score: {
+      correct: correctCount,
+      total: exam.questions.length,
+      earnedPoints,
+      totalPoints,
+      percentage,
+      passed: hasManualQuestions ? null : passed,
+      passingScore: exam.passingScore
+    },
+    startedAt: startedAt || new Date().toISOString(),
+    submittedAt: new Date().toISOString(),
+    completedAt: completedAt || new Date().toISOString(),
+    graded: !hasManualQuestions,
+    gradedAt: hasManualQuestions ? null : new Date().toISOString(),
+    gradedBy: hasManualQuestions ? null : 'auto',
+    teacherFeedback: '',
+    pointsAwarded: false
+  }
+  
+  // Store submission
+  const submissions = superAgentStore.examSubmissions.get(examId) || []
+  submissions.push(submission)
+  superAgentStore.examSubmissions.set(examId, submissions)
+  
+  // Update student points if auto-graded and passed
+  if (!hasManualQuestions && passed) {
+    student.points += earnedPoints + 25
+    submission.pointsAwarded = true
+    submissions[submissions.length - 1] = submission
+    superAgentStore.examSubmissions.set(examId, submissions)
+    
+    const levelInfo = calculateLevel(student.points)
+    student.level = levelInfo.level
+  }
+  
+  // Notify teacher
+  const teacherNotifications = dataStore.notifications.get(exam.teacherId) || []
+  teacherNotifications.unshift({
+    id: generateId(),
+    type: 'exam_submitted',
+    message: `📝 ${student.name} ha completado el examen "${exam.title}" - ${percentage}%`,
+    examId,
+    submissionId,
+    read: false,
+    createdAt: new Date().toISOString()
+  })
+  dataStore.notifications.set(exam.teacherId, teacherNotifications)
+  
+  return c.json({
+    success: true,
+    submissionId,
+    score: assignment.showResults ? submission.score : { percentage, passed: hasManualQuestions ? null : passed },
+    results: assignment.showResults ? results : null,
+    feedback: hasManualQuestions 
+      ? 'Tu examen tiene preguntas que requieren revisión manual. Recibirás tu calificación final pronto.'
+      : passed 
+        ? '¡Felicidades! Has aprobado el examen. Tu conocimiento brilla con luz propia. ✨'
+        : 'Continúa practicando. Cada intento es un paso más hacia la maestría. 🙏',
+    needsManualGrade: hasManualQuestions
+  })
+})
+
+// Ver mis resultados de un examen
+app.get('/api/student/:studentId/exams/:examId/results', async (c) => {
+  const { studentId, examId } = c.req.param()
+  
+  const exam = superAgentStore.exams.get(examId)
+  if (!exam) return c.json({ error: 'Examen no encontrado' }, 404)
+  
+  const assignment = superAgentStore.examAssignments.get(examId)
+  if (!assignment || !assignment.studentIds.includes(studentId)) {
+    return c.json({ error: 'No tienes acceso a este examen' }, 403)
+  }
+  
+  if (!assignment.showResults) {
+    return c.json({ error: 'Los resultados no están disponibles para este examen' }, 403)
+  }
+  
+  const submissions = superAgentStore.examSubmissions.get(examId) || []
+  const mySubmissions = submissions
+    .filter((s: any) => s.studentId === studentId)
+    .sort((a: any, b: any) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime())
+  
+  return c.json({
+    exam: {
+      id: exam.id,
+      title: exam.title,
+      totalPoints: exam.totalPoints,
+      passingScore: exam.passingScore
+    },
+    submissions: mySubmissions.map((s: any) => ({
+      id: s.id,
+      score: s.score,
+      results: s.results,
+      submittedAt: s.submittedAt,
+      graded: s.graded,
+      teacherFeedback: s.teacherFeedback
+    }))
+  })
+})
+
+// Dashboard de estadísticas del maestro
+app.get('/api/teacher/:teacherId/exam-stats', async (c) => {
+  const teacherId = c.req.param('teacherId')
+  
+  const teacher = dataStore.members.find(m => m.id === teacherId && m.role === 'teacher')
+  if (!teacher) return c.json({ error: 'Maestro no encontrado' }, 404)
+  
+  const myExams = Array.from(superAgentStore.exams.values()).filter(e => e.teacherId === teacherId)
+  
+  let totalExams = myExams.length
+  let totalSubmissions = 0
+  let totalPassed = 0
+  let totalFailed = 0
+  let totalPending = 0
+  let allScores: number[] = []
+  
+  const examStats = myExams.map(exam => {
+    const submissions = superAgentStore.examSubmissions.get(exam.id) || []
+    const assignment = superAgentStore.examAssignments.get(exam.id)
+    
+    totalSubmissions += submissions.length
+    const passed = submissions.filter((s: any) => s.score?.passed).length
+    const failed = submissions.filter((s: any) => s.score && !s.score.passed && s.graded).length
+    const pending = submissions.filter((s: any) => !s.graded).length
+    
+    totalPassed += passed
+    totalFailed += failed
+    totalPending += pending
+    
+    const scores = submissions.filter((s: any) => s.score?.percentage).map((s: any) => s.score.percentage)
+    allScores = allScores.concat(scores)
+    
+    return {
+      id: exam.id,
+      title: exam.title,
+      isAssigned: !!assignment,
+      assignedTo: assignment?.studentIds?.length || 0,
+      submissions: submissions.length,
+      passed,
+      failed,
+      pending,
+      averageScore: scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null,
+      passRate: submissions.length > 0 ? Math.round((passed / submissions.length) * 100) : null
+    }
+  })
+  
+  return c.json({
+    overview: {
+      totalExams,
+      totalSubmissions,
+      totalPassed,
+      totalFailed,
+      totalPending,
+      overallAverageScore: allScores.length > 0 ? Math.round(allScores.reduce((a, b) => a + b, 0) / allScores.length) : 0,
+      overallPassRate: totalSubmissions > 0 ? Math.round((totalPassed / totalSubmissions) * 100) : 0
+    },
+    examStats
+  })
 })
 
 // Helper: Check if answer is correct
