@@ -9,6 +9,7 @@
 | Entorno | URL |
 |---------|-----|
 | **Producción** | https://academia-de-luz.pages.dev |
+| **GitHub** | https://github.com/Academia-Luz/universo |
 | **Desarrollo** | http://localhost:3000 |
 
 ## ✅ Funcionalidades Implementadas
